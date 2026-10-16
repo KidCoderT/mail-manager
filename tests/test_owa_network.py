@@ -1,4 +1,4 @@
-from mailbrief.browser.owa_network import BODY_CAP, parse_items, parse_messages, preview_records, view_total
+from mailbrief.browser.owa_network import BODY_CAP, find_user_email, image_attachments, parse_items, parse_messages, preview_records, view_total
 
 # Shaped like Outlook's FindConversation response (conversation view).
 CONVERSATIONS = {
@@ -87,6 +87,9 @@ GETITEM = {
                             "From": {"Mailbox": {"Name": "Ana", "EmailAddress": "ana@x.com", "RoutingType": "SMTP", "MailboxType": "OneOff"}},
                             "Body": {"BodyType": "Text", "Value": "Hi,\r\n\r\n\r\n   please   send Q3.\r\n" + "x" * 30_000},
                             "Importance": "High",
+                            "ConversationIndex": "AQHcPd4R",
+                            "InReplyTo": "<orig@x.com>",
+                            "InternetMessageId": "<this@x.com>",
                             "IsRead": False,
                             "HasAttachments": True,
                             "Attachments": [{"Name": "q3.xlsx", "Size": 10, "AttachmentId": {"Id": "a"}}],
@@ -100,12 +103,36 @@ GETITEM = {
 }
 
 
+def test_global_ids_and_user_email():
+    conv = dict(CONVERSATIONS["Body"]["Conversations"][0], GlobalItemIds=[{"Id": "i-a"}, {"Id": "i-b"}, {"Id": "sent-1"}])
+    [c] = [m for m in parse_messages([{"Conversations": [conv]}]) if m["id"] == "c1"]
+    assert c["item_ids"] == ["i-a", "i-b"] and c["global_item_ids"] == ["i-a", "i-b", "sent-1"]
+    startup = {"owaUserConfig": {"SessionSettings": {"UserEmailAddress": "me@u.nus.edu", "LogonEmailAddress": "x"}},
+               "findConversation": CONVERSATIONS}
+    assert find_user_email([{"other": 1}, startup]) == "me@u.nus.edu"
+    assert find_user_email([CONVERSATIONS]) is None
+
+
+def test_image_attachments_filter():
+    att = lambda name, ctype, size, inline=None, id="a": {"Name": name, "ContentType": ctype, "Size": size, "IsInline": inline, "AttachmentId": {"Id": id}}
+    keep = image_attachments([
+        att("photo.jpg", "image/jpeg", 200_000, id="1"),
+        att("logo.png", "image/png", 40_000, inline=True),       # signature logo
+        att("tiny.png", "image/png", 2_000),                      # tracking pixel / icon
+        att("huge.png", "image/png", 9_000_000),
+        att("report.pdf", "application/pdf", 300_000),
+        att("scan.PNG", "application/octet-stream", 80_000, id="2"),  # wrong content type, image name
+    ] + [att(f"p{i}.png", "image/png", 50_000, id=f"x{i}") for i in range(5)])
+    assert [a["id"] for a in keep] == ["1", "2", "x0"]  # capped at 3 per email
+
+
 def test_parse_items():
     [r] = parse_items(GETITEM)
     assert (r["id"], r["conversation_id"], r["sender_name"], r["sender_email"]) == ("i-a", "c1", "Ana", "ana@x.com")
     assert r["body_text"].startswith("Hi,\n\nplease send Q3.") and len(r["body_text"]) == BODY_CAP
     assert r["attachment_names"] == ["q3.xlsx"] and r["importance"] == "High" and r["is_read"] is False
     assert r["received_at"].isoformat() == "2026-10-16T00:12:33+00:00" and r["body_source"] == "getitem"
+    assert (r["conversation_index"], r["in_reply_to"], r["internet_message_id"]) == ("AQHcPd4R", "<orig@x.com>", "<this@x.com>")
     assert parse_items({"unexpected": 1}) == []
 
 

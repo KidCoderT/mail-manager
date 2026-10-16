@@ -3,6 +3,8 @@
 > **Status:** Architecture plan / v1 design
 > **Scope of v1:** Outlook on the web (Microsoft 365), Playwright driving a **local Chromium**, Telegram delivery (more channels pluggable). [Browserless](https://www.browserless.io) is an optional later runtime.
 
+> 📘 **Docs:** [commands.md](commands.md) (every command in detail) · [teaching.md](teaching.md) (how and why the code works)
+
 MailBrief reads a user's work inbox every morning with a headless browser on the user's own machine. It sorts the emails inside Outlook (categories/folders, **never deletes**) and sends a summary to one or more destinations, starting with Telegram.
 
 ---
@@ -131,7 +133,25 @@ These formats are internal and undocumented, so all parsing lives in **one file*
 - Output: a list of `EmailRecord` JSON objects.
 
 ### 3.3 AI Processor
-A two-pass pipeline behind **one function**, `complete(prompt) -> str` (`ai/client.py`). It calls any **OpenAI-compatible** chat endpoint set by `AI_BASE_URL`. **Your company's own AI model is the preferred choice**, so email content stays in-house. No provider-specific code lives anywhere else.
+A two-pass pipeline behind **one function**, `complete(model, messages, thinking)` (`ai/client.py`, stdlib `urllib`). It calls any **OpenAI-compatible** chat endpoint set by `AI_BASE_URL`. **Your company's own AI model is the preferred choice**, so email content stays in-house. No provider-specific code lives anywhere else.
+
+**Current setup:** the NUS SoC endpoint (`https://soclaas-api.comp.nus.edu.sg/v1`), with the key taken from `AI_API_KEY` or the `SOCLAAS_API_KEY` system env var.
+
+| Role | Model | Why |
+|---|---|---|
+| Classify text emails | `qwen3.6:35b` | MoE (~3B active): light on a shared server; short JSON with no thinking; 262k context |
+| Classify emails with images | `qwen3.8:27b` (thinking off) | Newest (Aug 2026) dense native-vision model; 1.7 s per email |
+| Write the digest | `qwen3.8:27b` (thinking on) | Strongest reasoning in the list; connects related emails ("fee looks paid") |
+
+These were picked by testing every candidate on the endpoint with made-up emails (12 with known categories, plus a timetable screenshot):
+- qwen3.6:35b, qwen3.8:27b, qwen3-vl:32b and gemma4:26b all scored 12/12 and 5/5 on the screenshot. **Category definitions in the prompt were what got them there.**
+- gemma4 was 3–5× slower.
+- qwen3.5:9b ran out of tokens while thinking.
+- llama3.1:8b can't take images (HTTP 400) and got about half the categories right.
+
+**Images:** non-inline image attachments between 15 KB and 5 MB (up to 3 per email) are fetched through `GetAttachment` and sent to the vision model. They're kept in memory only. Signature logos are inline and skipped.
+
+**Untrusted input:** the email goes inside `<email>` delimiters, marked as data rather than instructions. The digest only sees Pass 1 results, never email bodies.
 
 **Requirements for the model**
 - It is reachable via an API (not just a chat window).
@@ -250,7 +270,43 @@ email_results            (optional, short retention)
   run_id, email_hash, category, priority, one_line_summary
 ```
 
-Raw email bodies are **not** persisted. They live in memory for the duration of a run only.
+**Email archive** (`archive.py`): each run saves its emails, with their classifications and the digest, to `data/archive/YYYY-MM.enc`, one file per received month.
+- **Encrypted by default** with `SESSION_ENCRYPTION_KEY`, so there's no password to type: `mailbrief emails` decrypts in memory.
+- `run --no-password` writes plain `YYYY-MM.json` instead. A month only ever has one of the two files.
+- Emails merge by ID, so re-runs never duplicate them.
+- **Already-saved emails are never sent to the AI again**: their stored classification is reused.
+- Image contents are never stored, only attachment names.
+- **Kept forever by default.** Set `ARCHIVE_DAYS` to drop months that ended more than that many days ago.
+- Old per-day files (`YYYY-MM-DD.*`) are folded into month files automatically.
+
+Files never move. **This week / this month / last month / older** are computed when you view:
+- this week starts on Monday;
+- this month starts on the 1st;
+- older means before last month.
+
+**Backfill:** `mailbrief run --backfill` saves the whole inbox once.
+- It goes oldest conversation first, with no digest.
+- It saves every 25 emails, so Ctrl+C keeps progress and a rerun continues where it stopped, skipping saved emails.
+- Afterwards the cursor sits at the newest email, so daily runs only see new mail.
+
+**Threads.** A reply or forward is always a **new email** with the same `ConversationId`; the original is never edited.
+- For each new conversation the app fetches *every* message, using `GlobalItemIds`, so your own replies in Sent Items are included.
+- It orders them by Exchange's `ConversationIndex`: a 22-byte root plus 5 bytes per reply level, so parents come before replies.
+- It recognises your messages by your address from Outlook's `StartupData`.
+- The classifier sees up to 6 earlier thread messages as context.
+- An email you answered is marked **✓ replied** and never listed under NEEDS A REPLY.
+- Your sent and other-folder messages are saved for context only, with no AI call.
+
+```
+mailbrief emails                       # this week, grouped by thread (↳ = reply, "You →" = you)
+mailbrief emails --period last-month   # this-week | this-month | last-month | older
+mailbrief emails --day 2026-10-16      # one day
+mailbrief emails --search fee          # sender / subject / body, all periods
+mailbrief emails --show 3              # full email + AI classification + thread outline
+mailbrief emails --thread 3            # the whole conversation in order, with bodies
+mailbrief emails --digest              # digests saved today (or for --day)
+mailbrief emails --export out.json     # plain JSON copy, on request only
+```
 
 ---
 
@@ -299,10 +355,11 @@ mailbrief/
 
 ```
 # AI: any OpenAI-compatible endpoint (preferably your company's own model)
-AI_BASE_URL=https://...
-AI_API_KEY=...
-AI_CLASSIFIER_MODEL=...
-AI_DIGEST_MODEL=...
+AI_BASE_URL=https://soclaas-api.comp.nus.edu.sg/v1
+# AI_API_KEY=...                  # optional; falls back to the SOCLAAS_API_KEY system env var
+AI_CLASSIFIER_MODEL=qwen3.6:35b
+AI_VISION_MODEL=qwen3.8:27b
+AI_DIGEST_MODEL=qwen3.8:27b
 
 # Browser: empty = local Chromium (default); set to use Browserless later
 BROWSER_WS_URL=
@@ -315,6 +372,7 @@ DEFAULT_TIMEZONE=Asia/Singapore
 DEFAULT_RUN_TIME=07:00
 SORT_MODE=categorize
 RESTORE_UNREAD=true             # DOM fallback only
+ARCHIVE_DAYS=0                  # 0 = keep saved emails forever; N = drop months older than N days
 ```
 
 ---
@@ -343,6 +401,7 @@ RESTORE_UNREAD=true             # DOM fallback only
 | Data | Goes to | Notes |
 |---|---|---|
 | Session cookies, email bodies | Local browser on your machine only | Unless Browserless is enabled (below) |
+| Saved emails (archive) | `data/archive/` on your machine | Encrypted by default; plain only with `--no-password` |
 | Email text for classification/digest | `AI_BASE_URL` | Use your company's model to keep it in-house |
 | Digest text (summaries only) | Telegram | Not end-to-end encrypted; summary-level only |
 | Everything the browser sees | Browserless | **Only if** `BROWSER_WS_URL` is set. Self-hosted stays local; cloud is a third party |
@@ -353,7 +412,7 @@ RESTORE_UNREAD=true             # DOM fallback only
 - **Browserless cloud sends work data to a third party** (US servers). Get employer/IT approval and a data-processing agreement first. Logging in locally and then uploading the session does **not** avoid this, because the cookies still go to the cloud.
 - **Email content is untrusted.** Models that read it have no tools. The fallback agent never runs with an email body open, and its actions pass through a code-enforced blocklist (§3.5).
 - **Telegram bot is send-only and locked down** (§3.6). Only chat IDs added via the local CLI receive digests.
-- Email content is held in memory per run, not stored long-term.
+- Email content is saved only in the local archive: encrypted by default and kept until you set `ARCHIVE_DAYS`. The encryption protects copies of `data/` (sync, backups, indexers, an accidental commit). It doesn't protect against someone logged into your Windows account, who also has `.env`.
 - The AI provider is configured for zero retention.
 - Check your employer's acceptable-use policy before automating a work account.
 
@@ -409,7 +468,7 @@ RESTORE_UNREAD=true             # DOM fallback only
 |---|---|
 | **M1** ✅ | `login_once` + headless session reuse (local Chromium); print today's inbox subjects from network capture |
 | **M2** ✅ | Full email extraction to JSON with cursor/dedupe; list-preview fallback (DOM fallback deferred) |
-| **M3** | Test the work AI model on real emails; classification + digest via `AI_BASE_URL`; send to one Telegram chat |
+| **M3** ✅ | Test the work AI model on real emails; classification (text + images) + digest via `AI_BASE_URL`; send to one Telegram chat |
 | **M4** | Sorter (categorize mode) + re-login alert |
 | **M5** | CLI-only destinations, bot lockdown, multiple destinations, scheduler, run logs |
 | **M6** | Optional AI fallback agent behind `guard.py`, failure screenshots, move mode |

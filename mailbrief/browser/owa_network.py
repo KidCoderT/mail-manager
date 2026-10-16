@@ -65,6 +65,8 @@ def _to_message(d: dict) -> dict | None:
         "sender": _sender(low),
         "received_at": received,
         "item_ids": [i for i in map(_id, item_ids or []) if i],
+        # Every message in the thread, in any folder (your Sent replies too); ItemIds is inbox only.
+        "global_item_ids": [i for i in map(_id, low.get("globalitemids") or item_ids or []) if i],
         "preview": low.get("preview") if isinstance(low.get("preview"), str) else "",
         "has_attachments": bool(low.get("hasattachments")),
         "importance": low.get("importance") or "Normal",
@@ -120,6 +122,7 @@ def view_total(payloads: list) -> int | None:
 _GETITEM_FIELDS = (
     "Subject", "From", "DateTimeReceived", "Body", "Importance",
     "IsRead", "HasAttachments", "Attachments", "ConversationId",
+    "ConversationIndex", "InReplyTo", "InternetMessageId", "DateTimeSent",
 )
 
 
@@ -147,6 +150,21 @@ def _clean(text: str) -> str:
     return text[:BODY_CAP]
 
 
+IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+IMAGE_MIN, IMAGE_MAX, IMAGES_PER_EMAIL = 15_000, 5_000_000, 3
+
+
+def image_attachments(attachments: list) -> list[dict]:
+    """Image attachments worth showing the vision model: real images, not inline signature logos."""
+    keep = []
+    for a in attachments or []:
+        name, ctype, size = a.get("Name") or "", a.get("ContentType") or "", a.get("Size") or 0
+        is_image = ctype.startswith("image/") or name.lower().endswith(IMAGE_EXTS)
+        if is_image and not a.get("IsInline") and IMAGE_MIN <= size <= IMAGE_MAX and _id(a.get("AttachmentId")):
+            keep.append({"id": _id(a["AttachmentId"]), "name": name, "content_type": ctype, "size": size})
+    return keep[:IMAGES_PER_EMAIL]
+
+
 def parse_items(response: dict) -> list[dict]:
     """EmailRecords from a GetItem response. Items that failed (e.g. deleted meanwhile) are skipped."""
     records = []
@@ -168,11 +186,34 @@ def parse_items(response: dict) -> list[dict]:
                 "body_text": _clean((it.get("Body") or {}).get("Value") or ""),
                 "has_attachments": bool(it.get("HasAttachments")),
                 "attachment_names": [a.get("Name") for a in it.get("Attachments") or [] if a.get("Name")],
+                "image_attachments": image_attachments(it.get("Attachments")),
                 "is_read": bool(it.get("IsRead")),
                 "importance": it.get("Importance") or "Normal",
                 "body_source": "getitem",
+                # Thread position: ConversationIndex is Exchange's thread-tree key (see threads.py).
+                "conversation_index": it.get("ConversationIndex") or "",
+                "in_reply_to": it.get("InReplyTo") or "",
+                "internet_message_id": it.get("InternetMessageId") or "",
+                # Set by the reader, which knows the inbox ids and your address.
+                "in_inbox": True,
+                "from_me": False,
             })
     return records
+
+
+def find_user_email(payloads: list) -> str | None:
+    """Your own address, from Outlook's StartupData (owaUserConfig.SessionSettings.UserEmailAddress)."""
+    stack = list(payloads)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            settings = node.get("SessionSettings")
+            if isinstance(settings, dict) and "@" in str(settings.get("UserEmailAddress", "")):
+                return settings["UserEmailAddress"]
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+    return None
 
 
 def preview_records(conversations: list[dict]) -> list[dict]:
@@ -187,7 +228,13 @@ def preview_records(conversations: list[dict]) -> list[dict]:
         "body_text": _clean(c["preview"]),
         "has_attachments": c["has_attachments"],
         "attachment_names": [],
+        "image_attachments": [],
         "is_read": None,
         "importance": c["importance"],
         "body_source": "preview",
+        "conversation_index": "",
+        "in_reply_to": "",
+        "internet_message_id": "",
+        "in_inbox": True,
+        "from_me": False,
     } for c in conversations]
