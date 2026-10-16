@@ -1,0 +1,24 @@
+[project]
+name = "mailbrief"
+version = "0.1.0"
+description = "AI morning email digest for Outlook on the web"
+authors = [
+    { name = "Tejas", email = "62064506+KidCoderT@users.noreply.github.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "cryptography>=50.0.2",
+    "playwright>=1.64.0",
+    "python-dotenv>=1.2.4",
+    "tzdata>=2026.5",
+]
+
+[project.scripts]
+mailbrief = "mailbrief.main:main"
+
+[build-system]
+requires = ["uv_build>=0.11.19,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""
