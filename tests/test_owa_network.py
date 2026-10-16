@@ -1,9 +1,4 @@
-from datetime import date
-from zoneinfo import ZoneInfo
-
-from mailbrief.browser.owa_network import parse_messages, received_on, view_total
-
-SGT = ZoneInfo("Asia/Singapore")
+from mailbrief.browser.owa_network import BODY_CAP, parse_items, parse_messages, preview_records, view_total
 
 # Shaped like Outlook's FindConversation response (conversation view).
 CONVERSATIONS = {
@@ -14,12 +9,15 @@ CONVERSATIONS = {
                 "ConversationTopic": "Q3 numbers",
                 "UniqueSenders": ["Ana"],
                 "LastDeliveryTime": "2026-10-16T08:12:33+08:00",
+                "ItemIds": [{"__type": "ItemId:#Exchange", "ChangeKey": "k", "Id": "i-a"}, {"Id": "i-b"}],
+                "Preview": "Need the Q3 figures",
+                "HasAttachments": True,
             },
             {
                 "ConversationId": {"Id": "c2"},
                 "ConversationTopic": "Late night",
                 "UniqueSenders": ["Bob"],
-                "LastDeliveryTime": "2026-10-15T15:30:00Z",  # 23:30 SGT on the 15th
+                "LastDeliveryTime": "2026-10-15T15:30:00Z",
             },
             {"ConversationId": {"Id": "c3"}, "ConversationTopic": "", "LastDeliveryTime": "2026-10-16T01:00:00Z"},
         ]
@@ -64,10 +62,51 @@ def test_items_and_preference():
     assert {m["kind"] for m in mixed} == {"conversation"}
 
 
-def test_today_in_local_timezone():
-    msgs = parse_messages([CONVERSATIONS])
-    today = received_on(msgs, date(2026, 10, 16), SGT)
-    assert [m["id"] for m in today] == ["c3", "c1"]  # c2 is the 15th in SGT
+def test_conversation_item_ids_and_preview_fallback():
+    c1 = next(m for m in parse_messages([CONVERSATIONS]) if m["id"] == "c1")
+    assert c1["item_ids"] == ["i-a", "i-b"] and c1["preview"] == "Need the Q3 figures"
+    [rec] = preview_records([c1])
+    assert rec["body_source"] == "preview" and rec["body_text"] == "Need the Q3 figures" and rec["has_attachments"]
+
+
+# Shaped like a real GetItem response (key names from a shape-only probe of Outlook).
+GETITEM = {
+    "Body": {
+        "ResponseMessages": {
+            "Items": [
+                {
+                    "ResponseClass": "Success",
+                    "ResponseCode": "NoError",
+                    "Items": [
+                        {
+                            "__type": "Message:#Exchange",
+                            "ItemId": {"Id": "i-a", "ChangeKey": "k"},
+                            "ConversationId": {"__type": "ItemId:#Exchange", "Id": "c1"},
+                            "Subject": "Q3 numbers",
+                            "DateTimeReceived": "2026-10-16T00:12:33Z",
+                            "From": {"Mailbox": {"Name": "Ana", "EmailAddress": "ana@x.com", "RoutingType": "SMTP", "MailboxType": "OneOff"}},
+                            "Body": {"BodyType": "Text", "Value": "Hi,\r\n\r\n\r\n   please   send Q3.\r\n" + "x" * 30_000},
+                            "Importance": "High",
+                            "IsRead": False,
+                            "HasAttachments": True,
+                            "Attachments": [{"Name": "q3.xlsx", "Size": 10, "AttachmentId": {"Id": "a"}}],
+                        }
+                    ],
+                },
+                {"ResponseClass": "Error", "ResponseCode": "ErrorItemNotFound", "Items": []},
+            ]
+        }
+    }
+}
+
+
+def test_parse_items():
+    [r] = parse_items(GETITEM)
+    assert (r["id"], r["conversation_id"], r["sender_name"], r["sender_email"]) == ("i-a", "c1", "Ana", "ana@x.com")
+    assert r["body_text"].startswith("Hi,\n\nplease send Q3.") and len(r["body_text"]) == BODY_CAP
+    assert r["attachment_names"] == ["q3.xlsx"] and r["importance"] == "High" and r["is_read"] is False
+    assert r["received_at"].isoformat() == "2026-10-16T00:12:33+00:00" and r["body_source"] == "getitem"
+    assert parse_items({"unexpected": 1}) == []
 
 
 def test_view_total():

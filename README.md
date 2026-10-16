@@ -113,14 +113,17 @@ Handles the "log in once, run headless forever" flow.
 ### 3.2 Inbox Reader (network-first)
 Extracts new emails from Outlook on the web **without scraping the page where possible**.
 
-**Primary: capture Outlook's own data.** Outlook's page fetches the message list and message bodies as JSON. `page.on("response")` captures those responses as the page loads and scrolls:
-- real item and conversation IDs (stable dedupe keys),
-- structured fields (sender, subject, received time, read state, importance, attachments),
-- message bodies without opening each email, so **nothing gets marked as read**.
+**1. List: capture Outlook's own data.** `page.on("response")` captures the `FindConversation` JSON that Outlook's page fetches as the list loads. The list is virtualized and pages in about 50 at a time, so the reader scrolls it with the mouse wheel until it has the count Outlook reports (`TotalConversationsInView`). With **Focused Inbox** on, it loads the **Focused** and **Other** tabs separately and tells their responses apart by `FocusedViewFilter`.
 
-That format is internal and undocumented, so all parsing lives in **one file** (`browser/owa_network.py`). When it changes, only that file needs fixing.
+**2. Full text: read-only `GetItem`.** For conversations newer than the cursor, the reader calls Outlook's own `service.svc?action=GetItem` with each conversation's `ItemIds` (20 per call, plain-text bodies). It reuses the auth headers from Outlook's latest request; these stay in memory only. Nothing is clicked or opened, so **read state is untouched** (verified: unread emails stay unread).
 
-**Fallback: DOM.** If the network parse fails, scroll the message list and open each email, using **stable selectors** (aria-labels, roles, visible text) from `selectors.py`. Opening an email marks it read, so this path restores the unread state afterwards (`RESTORE_UNREAD`).
+**3. Cursor and dedupe** (`cursor.py`, `data/cursor.json`): new = `received_at >= last_processed_at` and ID not among the last 500 processed. The first run looks back 24 h. The cursor only advances on `--commit` and only when every email has full text.
+
+These formats are internal and undocumented, so all parsing lives in **one file** (`browser/owa_network.py`). When they change, only that file needs fixing.
+
+**Fallback: list previews.** If `GetItem` fails, the run still produces one record per conversation, with Outlook's list preview as the body (`body_source: "preview"`). The cursor never advances on a preview run.
+
+**Deferred: DOM fallback.** Opening each email via `selectors.py` and restoring its unread state (`RESTORE_UNREAD`) would only be needed if both the list capture and `GetItem` break.
 
 **Both paths**
 - Read until reaching emails older than `last_processed_at`, deduped against `last_processed_ids`.
@@ -404,8 +407,8 @@ RESTORE_UNREAD=true             # DOM fallback only
 
 | Milestone | Deliverable |
 |---|---|
-| **M1** | `login_once` + headless session reuse (local Chromium); print today's inbox subjects from network capture |
-| **M2** | Full email extraction to JSON with cursor/dedupe; DOM fallback |
+| **M1** ✅ | `login_once` + headless session reuse (local Chromium); print today's inbox subjects from network capture |
+| **M2** ✅ | Full email extraction to JSON with cursor/dedupe; list-preview fallback (DOM fallback deferred) |
 | **M3** | Test the work AI model on real emails; classification + digest via `AI_BASE_URL`; send to one Telegram chat |
 | **M4** | Sorter (categorize mode) + re-login alert |
 | **M5** | CLI-only destinations, bot lockdown, multiple destinations, scheduler, run logs |
