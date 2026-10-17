@@ -25,7 +25,8 @@ def _needs_ai(stored: dict | None) -> bool:
     return (stored.get("classification") or {}).get("category") in (None, "Unclassified")
 
 
-def run(show_all=False, as_json=False, commit=False, send=False, plain=False, backfill=False, digest_scope=None) -> int:
+def run(show_all=False, as_json=False, commit=False, send=False, plain=False, backfill=False, digest_scope=None,
+        quiet=False) -> int:
     from playwright.sync_api import sync_playwright
 
     from mailbrief import archive, progress, threads
@@ -182,13 +183,13 @@ def run(show_all=False, as_json=False, commit=False, send=False, plain=False, ba
     if as_json:
         json.dump(targets, sys.stdout, default=lambda o: o.isoformat(), ensure_ascii=False, indent=2)
         print()
-    elif not backfill:
+    elif not backfill and not quiet:  # quiet (scheduled runs): logs never hold mail content
         for e in targets:
             c = e["classification"]
             done_tag = "  ✓ replied" if e["replied"] else ""
             print(f"  [{c['category']}/p{c.get('priority')}] {e['received_at'].astimezone(tz):%d %b %H:%M}  "
                   f"{e['sender_name'] or e['sender_email']} — {e['subject']}{done_tag}")
-    if text:
+    if text and not quiet:
         print(f"\n{text}\n", file=log)
     unclassified = sum(r["category"] == "Unclassified" for r in results)
     print(f"timing: read {t_read:.0f}s, classify {t_classify:.0f}s ({len(todo)} emails, {len(with_images)} with images)"
@@ -205,9 +206,9 @@ def run(show_all=False, as_json=False, commit=False, send=False, plain=False, ba
             return 1
         try:
             cur.save(cur.advance(cursor, targets))
-        except ValueError as e:
+        except ValueError as e:  # previews only: the digest went out, but these emails must be read again
             print(f"Cursor not advanced: {e}", file=log)
-            return 1
+            return 4  # not 1: rerunning would send the same digest again (serve retries 1, not 4)
         print("Cursor advanced: these emails won't be processed again.", file=log)
     return 0
 
@@ -390,8 +391,9 @@ def add_destination(type_: str, chat_id: str | None) -> int:
 def main() -> None:
     load_dotenv()
     # Emoji subjects and progress marks (✓) crash Windows' cp1252 encoding when output is piped.
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    for stream in (sys.stdout, sys.stderr):
+        if stream:  # None under pythonw (autostart runs `serve` without a window)
+            stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(prog="mailbrief", description="AI morning email digest for Outlook")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("login", help="sign in to Outlook once in a visible browser")
@@ -403,6 +405,7 @@ def main() -> None:
     run_p.add_argument("--send", action="store_true", help="send the digest to all destinations")
     run_p.add_argument("--commit", action="store_true", help="mark these emails processed (advance the cursor)")
     run_p.add_argument("--no-password", action="store_true", help="save the archive as plain JSON instead of encrypted")
+    run_p.add_argument("--quiet", action="store_true", help="don't print email subjects or the digest text (for logs)")
     run_p.add_argument("--digest", dest="digest_scope", metavar="SCOPE",
                        choices=["new", "this-week", "this-month", "last-month", "older", "all"],
                        help="what the digest covers: new (default: since the last commit), this-week, this-month, "
@@ -419,6 +422,12 @@ def main() -> None:
     dest_p = sub.add_parser("add-destination", help="add where digests are sent (local setup only)")
     dest_p.add_argument("type", choices=["telegram"])
     dest_p.add_argument("--chat-id", help="skip the lookup and add this chat id directly")
+    serve_p = sub.add_parser("serve", help="run forever, firing runs on the RUN_AT schedule (Ctrl+C or `stop` to end)")
+    serve_p.add_argument("--at", metavar="SCHEDULE", help='e.g. "daily 07:30; sun 20:00 this-week" (default: RUN_AT)')
+    sub.add_parser("stop", help="ask a running `serve` to stop (it finishes a run in progress first)")
+    sub.add_parser("status", help="is `serve` running? schedule, next and last run, log file")
+    auto_p = sub.add_parser("autostart", help="Windows: start `serve` hidden at logon (Task Scheduler)")
+    auto_p.add_argument("state", choices=["on", "off"])
     args = parser.parse_args()
 
     if args.command == "login":
@@ -433,5 +442,32 @@ def main() -> None:
             print("--send works with --digest (it resends the latest saved digest).")
             sys.exit(2)
         sys.exit(show_emails(args.period, args.day, args.search, args.show, args.thread, args.digest, args.export, args.send))
-    sys.exit(run(show_all=args.all, as_json=args.json, commit=args.commit, send=args.send,
-                 plain=args.no_password, backfill=args.backfill, digest_scope=args.digest_scope))
+    if args.command in ("serve", "stop", "status", "autostart"):
+        from mailbrief import service
+
+        spec = getattr(args, "at", None) or os.environ.get("RUN_AT") or service.DEFAULT_SCHEDULE
+        if args.command == "serve":
+            try:
+                sys.exit(service.serve(spec))
+            except ValueError as e:
+                print(f"Bad schedule: {e}")
+                sys.exit(2)
+        if args.command == "stop":
+            sys.exit(service.stop())
+        if args.command == "status":
+            sys.exit(service.status(spec))
+        sys.exit(service.autostart(args.state == "on"))
+    from mailbrief.service import Busy, lock
+
+    try:
+        with lock("run"):  # a manual run and a scheduled one never overlap
+            code = run(show_all=args.all, as_json=args.json, commit=args.commit, send=args.send, plain=args.no_password,
+                       backfill=args.backfill, digest_scope=args.digest_scope, quiet=args.quiet)
+    except Busy:
+        print("Another MailBrief run is in progress; try again when it finishes (`mailbrief status`).")
+        code = 3
+    sys.exit(code)
+
+
+if __name__ == "__main__":
+    main()

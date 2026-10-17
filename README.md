@@ -237,11 +237,18 @@ Adding a channel means writing one `send_<channel>(target, digest)` function and
 
 **Policy note:** Telegram bot chats are **not end-to-end encrypted**, so digest text leaves the company. Keep the digest summary-level (no full email bodies), and switch to an Email/Teams adapter if policy requires.
 
-### 3.7 Scheduler
-- Windows **Task Scheduler** or cron (Linux/macOS) fires the job runner. APScheduler can be used if the app runs as a long-lived process.
-- Per-user `run_time` and `timezone` (default `07:00 Asia/Singapore`).
-- A lock per user prevents overlapping runs.
-- A manual "run now" command is available for testing.
+### 3.7 Scheduler ✅ (`mailbrief/service.py`)
+- **`mailbrief serve`** is one long-running process that fires runs on the `RUN_AT` schedule:
+  - **format:** `daily 07:30; sun 20:00 this-week; day-1 09:00 last-month`, i.e. any days, any times, any digest scope;
+  - **where it runs:** on your PC (started hidden at logon by Windows Task Scheduler: `mailbrief autostart on`) and on a server (Docker `CMD`). The same code runs in both.
+- **Each run is a child process** with a timeout, so a hung browser or AI call can't take the service down. Failed runs are retried (15 min, 3 attempts).
+- **Catch-up after sleep or shutdown:** the latest missed run of each scope runs once.
+- **No overlaps:** OS file locks prevent overlapping runs (`run.lock`) and a second service (`serve.lock`). They are released by the OS even after a crash.
+- **Graceful stop:** Ctrl+C, `mailbrief stop`, or `docker stop` let a run in progress finish first.
+- **Logs and status:** monthly logs in `data/logs/` (no email content: `run --quiet`); `mailbrief status`.
+- **Expired login:** a Telegram alert, once a day.
+
+Commands and the full schedule format: [commands.md §6](commands.md#6-running-automatically).
 
 ---
 
@@ -369,7 +376,8 @@ TELEGRAM_BOT_TOKEN=...
 SESSION_ENCRYPTION_KEY=...
 DATABASE_URL=sqlite:///data/mailbrief.db
 DEFAULT_TIMEZONE=Asia/Singapore
-DEFAULT_RUN_TIME=07:00
+# When `mailbrief serve` runs: "<days> <HH:MM> [scope]; …" e.g. "daily 07:30; sun 20:00 this-week" (see commands.md §6)
+RUN_AT=daily 07:30
 SORT_MODE=categorize
 RESTORE_UNREAD=true             # DOM fallback only
 ARCHIVE_DAYS=0                  # 0 = keep saved emails forever; N = drop months older than N days
@@ -428,6 +436,15 @@ ARCHIVE_DAYS=0                  # 0 = keep saved emails forever; N = drop months
 
 **Recommendation for v1:** run locally on a machine the user already signs in from, and do the one-time login **on that machine**.
 
+**Always on, locally:** `mailbrief autostart on` (Task Scheduler starts `serve` at logon).
+
+**Always on, on a server:** `docker compose up -d --build` with the repo's `Dockerfile` and `compose.yaml`.
+- The container runs `mailbrief serve` as a non-root user, with `restart: unless-stopped`.
+- `.env` is passed in at runtime, and `data/` is a volume. Neither is baked into the image.
+- Log in on your PC, then copy `data/session.enc` across (with the same `SESSION_ENCRYPTION_KEY`).
+
+Steps: [commands.md §6 "Hosting"](commands.md#6-running-automatically). Before hosting **for other people**, see [hosting-checklist.md](hosting-checklist.md).
+
 ---
 
 ## 10. Risks & Mitigations
@@ -456,7 +473,7 @@ ARCHIVE_DAYS=0                  # 0 = keep saved emails forever; N = drop months
 - **AI models:** any OpenAI-compatible endpoint, preferably your company's own model (cheap model for classification, stronger model for the digest)
 - **AI fallback agent (optional):** browser-use, behind `guard.py`
 - **Storage:** SQLite
-- **Scheduling:** Windows Task Scheduler / cron
+- **Scheduling:** built-in `mailbrief serve` (stdlib), started by Windows Task Scheduler at logon or by Docker on a server
 - **Delivery:** Telegram Bot API over plain HTTPS (send-only, no SDK needed)
 - **Encryption:** `cryptography` (Fernet)
 
@@ -470,6 +487,6 @@ ARCHIVE_DAYS=0                  # 0 = keep saved emails forever; N = drop months
 | **M2** ✅ | Full email extraction to JSON with cursor/dedupe; list-preview fallback (DOM fallback deferred) |
 | **M3** ✅ | Test the work AI model on real emails; classification (text + images) + digest via `AI_BASE_URL`; send to one Telegram chat |
 | **M4** | Sorter (categorize mode) + re-login alert |
-| **M5** | CLI-only destinations, bot lockdown, multiple destinations, scheduler, run logs |
+| **M5** ✅ | Scheduler (`serve`, extensible `RUN_AT`, catch-up, retries), `stop` / `status`, Windows autostart, run lock, run logs, login-expired Telegram alert, Docker hosting files. (CLI-only destinations, multiple destinations already done; bot lockdown = `/setjoingroups` in @BotFather) |
 | **M6** | Optional AI fallback agent behind `guard.py`, failure screenshots, move mode |
 | **Later** | Browserless (Docker, then cloud), WhatsApp/Slack/Email/Teams adapters, Gmail support, web dashboard, multi-user |

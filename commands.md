@@ -9,11 +9,12 @@ Run all commands from the project folder (`mail-manager/`). They are run with **
 - [3. `mailbrief run`](#3-mailbrief-run)
 - [4. `mailbrief emails`](#4-mailbrief-emails)
 - [5. `mailbrief add-destination`](#5-mailbrief-add-destination)
-- [6. Developer commands (tests, checks)](#6-developer-commands)
-- [7. Configuration (`.env`) that changes command behaviour](#7-configuration-env)
-- [8. Files the commands create](#8-files-the-commands-create)
-- [9. Recipes: common workflows](#9-recipes)
-- [10. Exit codes at a glance](#10-exit-codes-at-a-glance)
+- [6. Running automatically: `serve`, `stop`, `status`, `autostart`, hosting](#6-running-automatically)
+- [7. Developer commands (tests, checks)](#7-developer-commands)
+- [8. Configuration (`.env`) that changes command behaviour](#8-configuration-env)
+- [9. Files the commands create](#9-files-the-commands-create)
+- [10. Recipes: common workflows](#10-recipes)
+- [11. Exit codes at a glance](#11-exit-codes-at-a-glance)
 
 ---
 
@@ -74,7 +75,7 @@ How often Microsoft expires sessions is set by your organisation's security poli
 ## 3. `mailbrief run`
 
 ```
-uv run mailbrief run [--all] [--backfill] [--digest SCOPE] [--json] [--send] [--commit] [--no-password]
+uv run mailbrief run [--all] [--backfill] [--digest SCOPE] [--json] [--send] [--commit] [--no-password] [--quiet]
 ```
 
 **What it does (default):** opens Outlook headless and finds emails that arrived since the last *committed* run. For each one it:
@@ -216,7 +217,7 @@ Sends the digest to every active destination in `data/destinations.json` (see `a
 - If no digest was written (no new mail, or `--backfill` without `--digest`), nothing is sent and that doesn't count as a failure.
 
 #### `--commit`
-Marks this run's emails as **processed** by advancing the cursor, so the next `run` won't show them again. It **refuses** (exit 1) in two cases:
+Marks this run's emails as **processed** by advancing the cursor, so the next `run` won't show them again. It **refuses** in two cases (exit 4 for previews, exit 1 for no delivery):
 - any email has only the list **preview**, not full text (the GetItem fallback was used). Moving the cursor would lose those emails' full text for good;
 - `--send` was used and the digest reached **no** destination.
 
@@ -226,6 +227,15 @@ Without `--commit` you can rerun as often as you like and see the same emails (t
 Saves this run's archive month files as **plain JSON** (`YYYY-MM.json`) instead of encrypted `.enc`, so you can open them in an editor.
 - Each month has only one file. Saving a month in the other format deletes the old file.
 - To go back to encrypted, run without the flag; the months it touches are rewritten as `.enc`.
+
+#### `--quiet`
+Leaves out the per-email lines and the digest text. Only progress, counts and results are printed (`Sent to telegram: …`).
+- This is what `serve` uses, so log files never contain email subjects or content.
+- The digest itself is still written, saved and sent as normal.
+
+### Only one run at a time
+`run` holds a lock (`data/run.lock`) while it works. If another run is already going (a scheduled one, or another terminal), it prints `Another MailBrief run is in progress…` and exits with code 3. Nothing is touched.
+- The lock is held by the operating system, so it disappears when the process ends, even after a crash. There's never a stale lock to delete.
 
 ### Common combinations
 | Command | Use |
@@ -243,8 +253,10 @@ Saves this run's archive month files as **plain JSON** (`YYYY-MM.json`) instead 
 | Code | Meaning |
 |---|---|
 | 0 | Success (including "0 new emails") |
-| 1 | Cursor not advanced (preview-only emails, or the digest wasn't delivered) |
+| 1 | Cursor not advanced: the digest reached no destination |
 | 2 | No saved session, or the session expired: run `mailbrief login` |
+| 3 | Another run is in progress (nothing done) |
+| 4 | Digest sent, but `--commit` refused because only list previews were available. The cursor is kept, so those emails are read again next time. `serve` does **not** retry this, because a retry would just send the same digest again |
 
 ---
 
@@ -344,7 +356,154 @@ uv run mailbrief add-destination telegram [--chat-id ID]
 
 ---
 
-## 6. Developer commands
+## 6. Running automatically
+
+Typing `mailbrief run --send --commit` every morning gets old. **`mailbrief serve`** runs forever and fires the runs itself, on a schedule you choose. The same command is used everywhere:
+
+| Where | What starts `serve` | What keeps it running |
+|---|---|---|
+| Your PC, by hand | You, in a terminal | The terminal window (closing it stops it) |
+| Your PC, automatically | Windows Task Scheduler, at logon (`mailbrief autostart on`) | Runs hidden (no window) until you `stop` it or log out |
+| A server | Docker (`docker compose up -d`) | Docker restarts it after crashes and reboots |
+
+### The schedule: `RUN_AT`
+Put it in `.env` (or pass `serve --at "…"` to try one without editing `.env`). Entries are separated by `;`, and each is **`<days> <HH:MM> [scope]`**:
+
+```
+RUN_AT="daily 07:30"                                   # once a day (the default when RUN_AT is unset)
+RUN_AT="daily 07:30; daily 18:00"                      # twice a day
+RUN_AT="sun 20:00 this-week"                           # once a week: a summary of the week
+RUN_AT="weekdays 08:00; weekends 10:00"                # later at the weekend
+RUN_AT="mon,wed,fri 07:30"                             # chosen days
+RUN_AT="daily 07:30; sun 20:00 this-week; day-1 09:00 last-month"   # daily + weekly + monthly
+```
+
+| Part | Allowed values |
+|---|---|
+| days | `daily`, `weekdays` (Mon–Fri), `weekends`, `mon` … `sun`, `day-N` (day of the month, 1–31). Comma lists mix freely: `mon,day-15` |
+| time | 24-hour `HH:MM`, in `DEFAULT_TIMEZONE` |
+| scope | `new` (default), `this-week`, `this-month`, `last-month`, `older`, `all`: the same scopes as `run --digest` |
+
+What each entry runs:
+- a **`new`** entry runs `mailbrief run --send --commit --quiet`: the normal "new mail since last time" digest; the cursor advances;
+- **any other scope** runs `mailbrief run --send --quiet --digest <scope>` **without `--commit`**. It still reads and archives new mail, but a weekly summary doesn't mark mail processed, so the next daily digest still shows it.
+
+A bad schedule is refused before anything starts: `Bad schedule: 'daily 7.30': time must look like 07:30` (exit 2).
+
+`day-31` only fires in months that have a 31st.
+
+### `mailbrief serve`
+```
+uv run mailbrief serve                       # schedule from RUN_AT (default "daily 07:30")
+uv run mailbrief serve --at "daily 18:00"    # try a schedule without editing .env
+```
+It prints (and logs) lines like:
+```
+2026-10-17 16:09:35 MailBrief service started (pid 33696), schedule: daily 07:30
+2026-10-17 16:09:35 next run: Sun 18 Oct 07:30
+2026-10-18 07:30:05 run started (new, slot Sun 18 Oct 07:30)
+    [00:00] Loading saved emails…
+    …
+    Sent to telegram: Tejas (private) (1 message)
+2026-10-18 07:30:46 run finished: ok in 40s
+2026-10-18 07:30:46 next run: Mon 19 Oct 07:30
+```
+How it behaves:
+- **Checks the clock every 30 s** (rather than one long sleep), so it notices the time correctly after your laptop wakes up.
+- **Catch-up:** if the PC was off or asleep at a scheduled time, that run happens as soon as `serve` is running again. Only the **latest** missed run of each scope is done: off for three days means one `new` digest, not three (it covers all three days anyway).
+- **First start ever:** no catch-up; it waits for the next scheduled time.
+- **Each run is a separate process** with a 45-minute limit. If Outlook or the AI hangs, that run is killed and `serve` carries on.
+- **Retries:** a failed run (e.g. no network right after waking) is retried after 15 min, up to 3 attempts, then skipped until the next scheduled time.
+- **Login expired:** not retried, since only you can log in. It sends **one Telegram message a day**: `⚠️ MailBrief: the Outlook login has expired…`. Run `mailbrief login`; the next scheduled run works again.
+- **No email content in the log:** scheduled runs use `--quiet`, so only progress, counts and results are logged, never subjects or digest text (the digest is in Telegram and the encrypted archive).
+- **Only one `serve` at a time:** a second one says `MailBrief is already running` (exit 3).
+
+### Stopping it properly
+| How it's running | How to stop |
+|---|---|
+| In a terminal | **Ctrl+C** |
+| Hidden (autostart) or another terminal | `uv run mailbrief stop` |
+| Docker | `docker compose down` (or `docker compose stop`) |
+
+All three do the same thing:
+- **idle:** it stops within a second;
+- **in the middle of a run:** it **lets the run finish** (email saved, digest sent, cursor advanced) and then stops. `mailbrief stop` waits up to 10 s, then tells you it's finishing the current run.
+- **Ctrl+C a second time** stops immediately, killing the run.
+
+Even a hard kill (Task Manager → End task, a power cut, `kill -9`) is **safe**: every file is written atomically (to a `.tmp` file, then renamed), and the cursor only advances after delivery. The worst case is that the next run redoes that work, or very rarely the same digest arrives twice.
+
+### `mailbrief status`
+```
+Service:   running (pid 34732, since Sat 17 Oct 16:12)
+Schedule:  daily 07:30
+Next run:  Sun 18 Oct 07:30
+Last run:  Sat 17 Oct 16:12 (new): ok, 19s
+Autostart: on (starts at logon)
+Log:       data\logs\2026-10.log
+```
+- `Right now: a run is in progress` appears during a run; `stopping (finishing the current run)` after a `stop`.
+- `Last run` results: `ok`, `login needed`, or `failed (exit N)`. The log has the details.
+
+### `mailbrief autostart on|off` (Windows)
+```
+uv run mailbrief autostart on     # start serve hidden every time you log in to Windows
+schtasks /Run /TN MailBrief       # …and start it right now, without logging out
+uv run mailbrief autostart off    # remove it (a running serve keeps going until `mailbrief stop`)
+```
+- It creates a Task Scheduler task named **MailBrief**:
+  - **trigger:** when you log in;
+  - **runs:** `.venv\Scripts\pythonw.exe -m mailbrief.main serve` in this folder (`pythonw` means no window);
+  - **settings:** runs on battery, with no time limit.
+- It runs **as you**, so it sees your Windows environment variables (like `SOCLAAS_API_KEY`) and `.env`.
+- You can see it in Task Scheduler (`taskschd.msc`) → Task Scheduler Library → MailBrief.
+- No admin rights needed.
+
+On Linux/macOS, `autostart` says to use Docker (or a systemd user service).
+
+### Watching the log
+```
+Get-Content data\logs\2026-10.log -Wait -Tail 30      # PowerShell: follow live
+tail -f data/logs/2026-10.log                         # Git Bash / Linux
+```
+There's one file per month, in `data/logs/` (git-ignored).
+
+### Hosting: always on, on a server
+A server runs the same `serve`, inside Docker. The files are in the repo:
+- **`Dockerfile`:** Python 3.11 + uv + Chromium. It runs `mailbrief serve` as a non-root user.
+- **`compose.yaml`:**
+  - `restart: unless-stopped`: always on, and back after a crash or reboot;
+  - `stop_grace_period: 10m`: `docker compose down` lets a run finish;
+  - `.env` is passed in;
+  - `./data` is a volume, so the archive, session and logs survive rebuilds.
+- **`.dockerignore`:** keeps `.env`, `data/` and exports **out of the image**.
+
+On the server:
+```
+git clone <repo> && cd mail-manager
+# .env: same values as your PC, plus SOCLAAS_API_KEY=… and RUN_AT=… (on your PC the key is a Windows variable)
+# copy data/session.enc and data/destinations.json from your PC into ./data/ (same SESSION_ENCRYPTION_KEY!)
+docker compose up -d --build                     # start (always on from now)
+docker compose logs -f                           # watch
+docker compose exec mailbrief mailbrief status   # status
+docker compose down                              # stop properly
+git pull && docker compose up -d --build         # update to new code
+```
+**Logging in on a server:** a server has no screen for `mailbrief login`, so log in on your PC and copy `data/session.enc` across. The `SESSION_ENCRYPTION_KEY` must be identical, or it can't be decrypted. When the login expires, the Telegram alert tells you; repeat the copy.
+
+The image needs about 2 GB of disk. Microsoft logins from a datacenter IP may expire sooner than from your PC.
+
+### Exit codes
+| Command | 0 | 2 | 3 |
+|---|---|---|---|
+| `serve` | stopped normally | bad schedule | already running |
+| `stop` | stopped / wasn't running / finishing a run | (n/a) | (n/a) |
+| `autostart` | done (1 = Task Scheduler refused, with its message) | not Windows | (n/a) |
+
+`serve` stopped by a second Ctrl+C exits with 130.
+
+---
+
+## 7. Developer commands
 
 ### Run the tests
 Each test file is a plain script: `assert`s plus a `__main__` runner, with no test framework. It prints `ok` or raises:
@@ -356,6 +515,7 @@ uv run python tests/test_telegram.py      # one message per section, "(cont.)" s
 uv run python tests/test_archive.py       # encryption, merge/dedupe, months, migration, periods, pruning
 uv run python tests/test_threads.py       # reply ordering, depth, "you replied", AI context lines
 uv run python tests/test_progress.py      # progress output when piped: quarter counters, ✓/✗ lines, no "\r"
+uv run python tests/test_service.py       # RUN_AT parsing (and rejecting bad ones), catch-up/due runs, next run, run flags, locks
 ```
 All of them in one go (Git Bash):
 ```
@@ -377,7 +537,7 @@ uv add <package>      # updates pyproject.toml + uv.lock and installs it
 
 ---
 
-## 7. Configuration (`.env`)
+## 8. Configuration (`.env`)
 
 | Variable | Default | Affects |
 |---|---|---|
@@ -391,12 +551,13 @@ uv add <package>      # updates pyproject.toml + uv.lock and installs it
 | `DEFAULT_TIMEZONE` | `Asia/Singapore` | Displayed times, `--day`, periods, which month file an email goes in |
 | `ARCHIVE_DAYS` | `0` (forever) | If > 0, `run` deletes month files that ended more than this many days ago |
 | `BROWSER_WS_URL` | *(empty)* | Empty = local Chromium. Set it to connect to a Browserless/CDP browser instead |
+| `RUN_AT` | `daily 07:30` | When `serve` runs, and which digest each time (format in section 6) |
 
-Listed in `.env.example` but **not used by the code yet** (planned for later milestones): `FALLBACK_AGENT`, `DATABASE_URL`, `DEFAULT_RUN_TIME`, `SORT_MODE`, `RESTORE_UNREAD`.
+Listed in `.env.example` but **not used by the code yet** (planned for later milestones): `FALLBACK_AGENT`, `DATABASE_URL`, `SORT_MODE`, `RESTORE_UNREAD`.
 
 ---
 
-## 8. Files the commands create
+## 9. Files the commands create
 
 | File | Created by | Contents | Sensitive? |
 |---|---|---|---|
@@ -405,13 +566,17 @@ Listed in `.env.example` but **not used by the code yet** (planned for later mil
 | `data/archive/YYYY-MM.enc` | every `run` | That month's emails, classifications, digests, encrypted | Yes (encrypted) |
 | `data/archive/YYYY-MM.json` | `run --no-password` | Same, **plain text** | **Yes, unencrypted** |
 | `data/destinations.json` | `add-destination` | Telegram chat IDs | Mildly |
+| `data/schedule.json` | `serve` | Schedule, last scheduled time done, last run result, next run | No |
+| `data/logs/YYYY-MM.log` | `serve` | Timestamped service lines + run progress (no email content: `--quiet`) | No |
+| `data/run.lock`, `data/serve.lock` | `run`, `serve` | Empty; the OS lock on them is what matters | No |
+| `data/stop.request` | `stop` | Empty; `serve` deletes it when it stops | No |
 | whatever `--export FILE` / `--json >` names | you | Plain email JSON | **Yes, unencrypted** |
 
 All of `data/` and `.env` are git-ignored. Exported files elsewhere are **not**.
 
 ---
 
-## 9. Recipes
+## 10. Recipes
 
 **First-time setup**
 ```
@@ -423,10 +588,36 @@ uv run mailbrief run --backfill        # optional: archive the whole inbox once
 uv run mailbrief add-destination telegram
 ```
 
-**Every morning** (by hand now, by the scheduler from M5)
+**Every morning by hand**
 ```
 uv run mailbrief run --send --commit
 ```
+
+**Every morning automatically, on this PC**
+```
+uv run mailbrief autostart on          # once: start with Windows from now on
+schtasks /Run /TN MailBrief            # start it now without logging out
+uv run mailbrief status                # check: running, next run
+```
+
+**Stop it** (today only / for good)
+```
+uv run mailbrief stop                  # stops now; starts again at your next login
+uv run mailbrief autostart off         # no longer starts at login (then `stop` if it's running)
+```
+
+**Try a schedule in a terminal first**
+```
+uv run mailbrief serve --at "daily 07:30; sun 20:00 this-week"   # Ctrl+C to stop
+```
+
+**"Is it running? Did this morning's run work?"**
+```
+uv run mailbrief status
+Get-Content data\logs\2026-10.log -Tail 40
+```
+
+**Run it on a server** → section 6, "Hosting".
 
 **"What did that email say?"**
 ```
@@ -464,11 +655,14 @@ uv run mailbrief login
 
 ---
 
-## 10. Exit codes at a glance
+## 11. Exit codes at a glance
 
 | Command | 0 | 1 | 2 |
 |---|---|---|---|
 | `login` | saved | (n/a) | (n/a) |
-| `run` | success | cursor not advanced | no session / session expired |
+| `run` | success | cursor not advanced | no session / session expired (3 = another run in progress, 4 = sent but cursor kept: previews only) |
+| `serve` | stopped normally | (n/a) | bad schedule (3 = already running, 130 = forced stop) |
+| `stop` / `status` | done | (n/a) | (n/a) |
+| `autostart` | done | Task Scheduler refused | not Windows |
 | `emails` | success | bad number / can't decrypt | bad `--day` |
 | `add-destination` | added | no chats / bad choice | unknown type |

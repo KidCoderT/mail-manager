@@ -1,0 +1,10 @@
+# Never bake secrets or mail into the image.
+.env
+data/
+out.json
+# Local-only clutter
+.venv/
+.git/
+__pycache__/
+*.log
+tests/

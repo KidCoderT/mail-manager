@@ -28,6 +28,7 @@ Read it top to bottom once. After that, each section stands on its own as a refe
    - 7.12 [`notify/` and `destinations.py`](#712-notify-and-destinationspy): delivery
    - 7.13 [`main.py`](#713-mainpy): the conductor
    - 7.14 [`progress.py`](#714-progresspy): never look stuck
+   - 7.15 [`service.py`](#715-servicepy): running on its own (schedule, stop, autostart, hosting)
 8. [The full run, end to end](#8-the-full-run-end-to-end)
 9. [Failure handling: what can go wrong and what happens](#9-failure-handling)
 10. [Security model](#10-security-model)
@@ -111,11 +112,16 @@ mail-manager/
 ├── README.md               architecture & roadmap
 ├── commands.md             every command, in detail
 ├── teaching.md             this file
+├── hosting-checklist.md    what must change before other people can use it
+├── Dockerfile, compose.yaml, .dockerignore   running `serve` always-on on a server
 ├── data/                   (git-ignored) everything the app saves
 │   ├── session.enc         your Outlook login, encrypted
 │   ├── cursor.json         "where did we get to?"
 │   ├── destinations.json   where digests go
-│   └── archive/YYYY-MM.enc saved emails, one file per month
+│   ├── archive/YYYY-MM.enc saved emails, one file per month
+│   ├── schedule.json       the service's memory: last scheduled time done, last result, next run
+│   ├── logs/YYYY-MM.log    what the service did (no email content)
+│   └── run.lock, serve.lock   locked by the OS while a run / the service is active
 ├── mailbrief/              the program
 │   ├── main.py             the command line + the run pipeline (the conductor)
 │   ├── browser/
@@ -132,6 +138,7 @@ mail-manager/
 │   │   └── digest.py           Pass 2: write the summary
 │   ├── threads.py          conversation order, "you replied", context
 │   ├── progress.py         live progress lines, counters, spinner (to stderr)
+│   ├── service.py          serve / stop / status / autostart: runs on a schedule, by itself
 │   ├── cursor.py           which emails are new
 │   ├── archive.py          the saved history (monthly files, periods)
 │   ├── destinations.py     the list of Telegram chats
@@ -145,7 +152,7 @@ mail-manager/
 |---|---|
 | `outlook_reader.py` (browser, network) | `owa_network.py` (JSON → records) |
 | `ai/client.py` (HTTP) | `ai/classifier.py`'s `validate`, `trim_body` |
-| `notify/telegram.py` (HTTP) | `telegram.split` |
+| `notify/telegram.py` (HTTP) | `telegram.messages` |
 | `archive.py`, `cursor.py` (disk) | `threads.py`, `archive.period_range`, `cursor.select_new` |
 
 That's why the tests run without internet: they exercise the pure half with made-up data.
@@ -156,7 +163,7 @@ That's why the tests run without internet: they exercise the pure half with made
 
 ## 5. The three lifecycles
 
-Everything the app does falls into one of three flows.
+Everything the app does falls into one of three flows, plus a fourth (D) that simply runs flow B for you on a schedule.
 
 ### A. Login (once)
 ```
@@ -186,6 +193,15 @@ you run `mailbrief emails …`
   → decrypt the archive in memory
   → filter (period / day / search), group by thread, number
   → list, or show one, or show a whole thread, or digest, or export
+```
+
+### D. Serve (always on)
+```
+Task Scheduler at logon (your PC) or Docker (a server) starts `mailbrief serve`
+  → every 30 s: is a scheduled time due (or missed while asleep)?
+      yes → start flow B as a child process: `run --send --quiet [--commit | --digest SCOPE]`
+            log the result; retry later if it failed; alert on Telegram if the login expired
+  → until Ctrl+C / `mailbrief stop` / `docker stop`: finish any run in progress, then exit
 ```
 
 The rest of this guide zooms into each step.
@@ -895,6 +911,143 @@ working(label)          → a context ("with" block) around one long job:
 
 ---
 
+### 7.15 `service.py`
+**Job:** run MailBrief by itself, on a schedule. Start, stop and check on it, and do it the same way on your PC and on a server.
+
+#### The big decision: one long-running `serve`, everywhere
+There were two ways to make it "run every morning":
+1. Ask the operating system to launch `run` at 07:30 (a Task Scheduler time trigger, or cron on Linux).
+2. Keep one program running that watches the clock and launches `run` itself.
+
+MailBrief uses **option 2, `mailbrief serve`**, started by Task Scheduler **at logon** on Windows, or by Docker on a server. Why:
+- **One mental model.** Hosting means "a constantly running app" (that's what a container is), and option 2 *is* that. With option 1 you'd learn two systems: Task Scheduler time triggers on the PC, something else on the server.
+- **The schedule is ours.** `RUN_AT="daily 07:30; sun 20:00 this-week; day-1 09:00 last-month"` can say things like "a weekly summary on Sundays", with a different digest per entry. Task Scheduler and cron can't attach a digest scope to a time without a separate task per line.
+- **Start / stop / status are ours** too, and identical everywhere.
+
+The cost is one idle Python process (a few MB of RAM, asleep almost all the time).
+
+#### The schedule: parse once, then plain date arithmetic
+```
+parse_schedule("daily 07:30; sun 20:00 this-week")
+  → [ {weekdays: Mon..Sun, monthdays: {}, at: 07:30, scope: new},
+      {weekdays: {Sun},    monthdays: {}, at: 20:00, scope: this-week} ]
+  each entry: "<days> <HH:MM> [scope]"; days = daily | weekdays | weekends | mon..sun | day-N, comma-separated
+  anything else → ValueError naming the bad entry   (serve refuses to start: a typo must not mean "never runs")
+
+_slots(schedule, start, end)   → every (time, scope) the schedule fires in (start, end]
+                                 walk the days; an entry fires on a day if the weekday OR the day-of-month matches
+due_slots(now, schedule, last_done)
+    → the slots in (last_done, now], keeping only the LATEST per scope
+next_slot(now, schedule)       → the earliest slot after now   (for "next run: …")
+```
+**Why "latest per scope"?** If the laptop was closed for three days, three morning digests are due. But a `new` digest covers *everything since the cursor*, so one run covers all three days. Running it three times would send one full digest and two empty ones. A weekly `this-week` slot is a different scope, so it still gets its own run.
+
+**Why `last_done` and not "did it run today?"** One timestamp handles every schedule shape (twice a day, weekly, monthly) and every gap (one hour asleep or a month away) with the same comparison. The look-back is capped at 35 days, enough to find a missed monthly slot.
+
+**Why no catch-up on the very first start?** With no `last_done` yet, "missed" has no meaning. Starting the service for the first time shouldn't fire off a run unasked.
+
+**Why only `new` entries use `--commit`?** `--commit` advances the cursor ("these emails are done"). If the Sunday weekly summary committed, then Monday's morning digest would skip Sunday afternoon's mail: it would have been "done" by a summary that may have mentioned it in one line. Period digests read the archive and leave the cursor alone.
+
+#### The loop
+```
+serve(spec):
+    schedule ← parse_schedule(spec)                       bad → exit 2 before anything starts
+    hold the "serve" lock                                 already held → "already running", exit 3
+    state ← data/schedule.json; first start → last_done = now
+    on Ctrl+C / SIGTERM / Ctrl+Break: set "stopping" (a second Ctrl+C → stop immediately)
+    loop until stopping (or data/stop.request appears):
+        due ← due_slots(now, schedule, last_done) minus ones already done this round
+        if due and not waiting for a retry:
+            for each due slot: run it as a child process; log "run finished: ok in 40s"
+                exit 2 (login expired) → Telegram alert (once a day), don't retry
+            all done (or 3 attempts used) → last_done ← the latest due slot
+            otherwise → retry in 15 min
+        else:
+            log "next run: Sun 18 Oct 07:30" (only when it changes)
+            sleep 30 × 1 s, checking for a stop request every second
+```
+**Why check every 30 s instead of sleeping until 07:30?** A laptop that sleeps from 23:00 to 08:00 would wake up with `sleep()` still counting. Depending on the OS, the program might not notice it was late until far after. Re-reading the wall clock every 30 s means it notices within half a minute of waking. The cost is nothing: one date comparison.
+
+**Why sleep in 1-second steps?** So `mailbrief stop` (which just creates a file) is noticed within a second, not after up to 30.
+
+#### Each run is a child process
+`serve` doesn't call `run()` directly. It starts `python -m mailbrief.main run --send --quiet …` as a **separate process**:
+- **Isolation.** A run drives a whole browser and makes dozens of network calls. If any of that crashes, hangs or leaks memory, it dies with the child. `serve` keeps going, and the next run starts fresh.
+- **A hard timeout is possible.** You can't safely kill a function running inside your own process, but you can kill a process. A run taking over 45 minutes is stuck, so it's killed and retried.
+- **The exit code is the result.** `run` already returns meaningful codes: 0 ok, 1 not delivered, 2 login needed, 3 another run going. `serve` just reads them. No new interface was needed.
+- **Its output goes to the log.** A reader thread copies each line into `data/logs/YYYY-MM.log` (indented under serve's own lines), and to the screen in a terminal.
+- **Its own process group** (`CREATE_NEW_PROCESS_GROUP` on Windows, `start_new_session` on Linux). Ctrl+C in a terminal is delivered to the whole group, so without this it would hit the run in the middle of a step. With its own group, only `serve` hears Ctrl+C, and `serve` decides to *let the run finish*.
+- **No flashing window** (`CREATE_NO_WINDOW`), and the child uses `python.exe` even when `serve` is `pythonw.exe` (see autostart below), so it has real output streams to log.
+
+#### Locks: the OS remembers, so they can't go stale
+```
+with lock("run"):  → open data/run.lock and ask the OS for an exclusive lock on it
+                     (msvcrt.locking on Windows, fcntl.flock on Linux)
+                     not available → Busy
+```
+- `run` holds `run.lock`: a scheduled run and a run you typed can't overlap. Overlapping runs would fight over the cursor and archive, and send two digests.
+- `serve` holds `serve.lock`: two services would fire every run twice.
+- `status` and `stop` find out "is serve running?" by *trying* the lock.
+
+**Why not a PID file** (write "I'm process 1234" to a file, delete it on exit)? Because a crash, kill or power cut never deletes it. Then you'd need "is 1234 still alive, and is it really us?" checks, which are full of traps; on Windows even the obvious check, `os.kill(pid, 0)`, sends a Ctrl+C. An OS lock is **released by the OS when the process ends, however it ends**. There's never a stale lock to clean up.
+
+#### Stopping properly
+| Signal | Where it comes from |
+|---|---|
+| SIGINT | Ctrl+C in the terminal |
+| SIGTERM | `docker stop` / `docker compose down` |
+| SIGBREAK | Ctrl+Break, or closing the console window (Windows) |
+| `data/stop.request` | `mailbrief stop`, which works even when there's no console (autostart) |
+
+All four just set one flag, `stopping`. The loop checks it:
+- **between runs**, it exits at once;
+- **during a run**, it waits for the child to finish (save, digest, send, cursor), then exits;
+- a **second** Ctrl+C means "now": the child is killed and `serve` exits with 130.
+
+**Why is even killing it safe?** Two decisions from earlier milestones pay off here:
+1. **Atomic writes:** every file is written to `.tmp` and then renamed. A file is either the old version or the new one, never half.
+2. **The cursor only moves after delivery:** if a run dies before that point, the next run simply redoes the same emails (saved emails skip the AI).
+
+The only imperfect case is a kill between "digest sent" and "cursor saved": you'd get that digest twice. That's a fair price for never losing an email.
+
+**Why does Docker get `stop_grace_period: 10m`?** `docker stop` sends SIGTERM, waits (10 s by default), then force-kills. Ten minutes lets a run in progress finish. `init: true` adds a tiny first process (PID 1) that passes the signal on to `serve` properly.
+
+#### Retries and the login alert
+- **Exit 1 or 3, or a timeout:** worth retrying. Typical causes are no network yet after waking, or a run you started by hand still going. So it retries in 15 min, up to 3 attempts, then moves on to the next scheduled time.
+- **Exit 4** (digest sent, but the cursor kept because only previews were available): treated as done. A retry would only send the same digest again.
+- **Exit 2 (login expired):** retrying can't help, because only you can log in. An unattended service that just logs "login needed" would leave you wondering why the digests stopped. So it sends a Telegram message, **at most once a day** (remembered in `schedule.json`), so a week of failed runs doesn't spam you.
+
+#### Logs without content
+Scheduled runs pass **`--quiet`**, which leaves out the per-email lines and the digest text. The log keeps timings, counts, progress and results, enough to debug, but **no subjects or bodies**. The archive is encrypted. A plain-text log full of subjects would quietly undo that.
+
+#### Autostart on Windows
+`mailbrief autostart on` asks PowerShell's `Register-ScheduledTask` for a task:
+```
+trigger:   at logon of you
+action:    .venv\Scripts\pythonw.exe -m mailbrief.main serve
+start in:  the project folder              ← data/ and .env paths are relative to it
+settings:  run on battery, no time limit, ignore a second start
+```
+- **Why `pythonw.exe`?** It's Python without a console window, so there's no black box on your screen all day. The catch: there's no stdout. `print` goes nowhere, and `sys.stdout.reconfigure(...)` would crash because `sys.stdout` is `None`. So `main()` skips the reconfigure when there's no stream, and `serve` writes everything to its log file.
+- **Why at logon, not at boot?** It runs **as you**: your user environment variables (`SOCLAAS_API_KEY`) and your files. A boot-time task would need your Windows password stored in Task Scheduler, or would run as a system account that doesn't have them.
+- **Why the working directory matters:** paths like `data/session.enc` are relative. Started from `C:\Windows\System32`, it would look for your session there.
+
+#### Hosting: the same `serve`, in a container
+```
+Dockerfile:   python:3.11-slim + uv (pinned) + locked dependencies + Chromium (playwright install --with-deps)
+              runs as user "app" (uid 1000), not root
+              CMD mailbrief serve
+compose.yaml: restart: unless-stopped   → always on: back after crashes and reboots, until you `down` it
+              env_file: .env            → secrets come in at runtime…
+              volumes: ./data           → …and so does the data: neither is ever inside the image
+              shm_size: 1gb             → Chromium crashes with Docker's tiny 64 MB default
+.dockerignore: .env, data/, out.json    → the build can't accidentally copy them in
+```
+- **Why build our own image** rather than use Microsoft's Playwright image? Theirs is published per Playwright version, and there isn't one for the 1.64 we use yet. Installing Chromium ourselves with `playwright install --with-deps` always matches the locked version.
+- **Why can't the server log in?** `login` needs a visible browser and you at the keyboard (MFA). So you log in on your PC and copy `data/session.enc` across, with the **same** `SESSION_ENCRYPTION_KEY`. The Telegram alert tells you when it's time to do that again.
+
+---
+
 ## 8. The full run, end to end
 
 Here's `mailbrief run` as one story, with the reason for each step.
@@ -989,6 +1142,15 @@ Every numbered step also prints a progress line (`[00:17] Loading Focused tab 28
 | A digest was written but not delivered | `mailbrief emails --digest --send` resends it | No need to spend AI time again |
 | No destination reached | Cursor not advanced | Don't mark mail "done" that nobody saw |
 | Crash mid-write | Old file intact (temp file + rename) | Never corrupt state |
+| Two runs at once (scheduled + manual) | The second says "another run is in progress", exit 3 | Runs would fight over the cursor and send twice |
+| `serve` started twice | "already running", exit 3 | Every run would fire twice |
+| A scheduled run fails (no network after waking…) | Retried in 15 min, up to 3 attempts, then the next scheduled time | Most causes are temporary |
+| A scheduled run hangs | Killed after 45 min, retried | A stuck browser mustn't block every later run |
+| Login expired while unattended | Telegram alert, at most once a day; no retries | Only you can fix it, and you need to be told |
+| PC asleep/off at the scheduled time | The missed run happens on wake/start, once per scope | A late digest beats a missing one; one covers the gap |
+| Stop requested during a run | The run finishes, then the service exits | Nothing half-done |
+| Service killed hard (End task, power cut) | Next run redoes the work (rarely: one repeated digest) | Atomic writes + cursor-after-delivery |
+| Bad `RUN_AT` | `serve` refuses to start, naming the bad entry | A typo must not mean "silently never runs" |
 | Wrong encryption key | Error names the file and the cause | Easier to diagnose than a raw crypto error |
 
 ---
@@ -1034,6 +1196,7 @@ Each module with real logic has one small test script, `tests/test_<module>.py`:
 | `test_archive` | encryption round-trip, plain JSON, merge without duplicates, month split, time-zone sorting, format switch, migration, wrong key, period boundaries incl. a year rollover, pruning |
 | `test_threads` | reply-tree ordering (the "Ana replies to your reply after Bob" case), depth, `replied` only counting later messages, context lines |
 | `test_progress` | when piped: timestamped step lines, counters only at 25% steps, `working` start and ✓ lines, ✗ on failure, never a `\r` |
+| `test_service` | every `RUN_AT` form parses (daily, weekdays, weekends, day lists, `day-N`, scopes) and bad ones are rejected; due runs: on time, not early, three days off = one catch-up, latest per scope (daily + weekly + monthly), nothing when done; next run across weekends and months; only `new` commits; the lock is exclusive and released |
 
 **Real-world checks** were also done against your actual inbox during development:
 - unread emails stayed unread;
@@ -1043,7 +1206,14 @@ Each module with real logic has one small test script, `tests/test_<module>.py`:
 - a thread with your forward was shown correctly;
 - `run --all` dropped from 15+ silent minutes to 58 s with live progress;
 - a redirected log had no `\r` redraws;
-- a `this-month` digest of 149 emails ran in 6 parallel parts and produced STILL OPEN / DEADLINES / KEY EVENTS / NOISE.
+- a `this-month` digest of 149 emails ran in 6 parallel parts and produced STILL OPEN / DEADLINES / KEY EVENTS / NOISE;
+- **the service:**
+  - `serve` fired on time, delivered to Telegram and logged no subjects;
+  - a manual `run` and a second `serve` were refused while it ran;
+  - `mailbrief stop` during a run let it finish, then stopped;
+  - `autostart on` + `schtasks /Run` started it hidden and caught up a missed 07:30 slot;
+  - `stop` and `autostart off` cleaned up;
+  - a simulated Ctrl+C stopped an idle service at once.
 
 ---
 
@@ -1079,10 +1249,13 @@ Each of these was found by running against real Outlook, and each shaped the cod
 - A **forward** you sent counts as "replied".
 - JSON files instead of a database: fine for one user.
 - The AI can't see PDFs or Office attachments, only their names.
+- **Service logs are never pruned** (one small file per month); delete old ones by hand if you like.
+- The **Docker image hasn't been built yet** (to save disk); expect small fixes on the first build.
+- On a server, the Outlook login is **copied from your PC**, and Microsoft may expire logins from datacenter IPs sooner.
 
 **Roadmap** (README §12):
 - **M4:** apply `MB: Urgent`-style categories in Outlook (the first write), plus a Telegram alert when the session expires.
-- **M5:** Windows Task Scheduler at 07:00 running `run --send --commit`, a lock against overlapping runs, run logs.
+- **M5 ✅:** `serve` with an extensible schedule, `stop` / `status`, autostart at logon, run locks, logs, the login alert, Docker files (section 7.15).
 - **M6:** optional self-healing browser agent behind a code-enforced blocklist, and a "move to folders" mode.
 - **Later:** WhatsApp/Slack/email delivery, Gmail, Browserless (Docker/cloud), a dashboard, multiple users.
 
@@ -1114,3 +1287,12 @@ Each of these was found by running against real Outlook, and each shaped the cod
 | **429** | HTTP "Too Many Requests", a rate limit |
 | **Data URL** | An image embedded as text: `data:image/png;base64,…` |
 | **ponytail comment** | A marked, deliberate simplification naming its limit and upgrade path |
+| **Service / daemon** | A program that keeps running in the background (here: `mailbrief serve`) |
+| **Child process** | A separate program started by another; it can crash or be killed without taking the parent down |
+| **Exit code** | The number a program returns when it ends: 0 = fine, anything else = a specific problem |
+| **OS file lock** | A lock the operating system holds on a file for a process and drops automatically when the process ends |
+| **SIGINT / SIGTERM** | "Please stop" signals: Ctrl+C / what `docker stop` sends |
+| **Process group** | Processes that receive Ctrl+C together; a run gets its own so Ctrl+C reaches only `serve` |
+| **pythonw** | Windows Python with no console window (and so no stdout) |
+| **Container / image** | Docker: an image is a packaged app plus everything it needs; a container is a running copy of it |
+| **Volume** | A folder from the host mounted into a container, so data outlives the container |

@@ -1,0 +1,16 @@
+# docker compose up -d --build   start (and again after `git pull`)
+# docker compose logs -f         watch
+# docker compose exec mailbrief mailbrief status
+# docker compose down            stop properly (a run in progress finishes first)
+services:
+  mailbrief:
+    build: .
+    restart: unless-stopped   # always on: back after a crash or a server reboot, until you `down` it
+    init: true                # a tiny PID 1 that passes `docker stop` (SIGTERM) on to serve
+    stop_grace_period: 10m    # time for a run in progress to finish before Docker force-kills
+    env_file: .env            # must hold SOCLAAS_API_KEY too (on your PC it's a Windows variable)
+    environment:
+      TZ: Asia/Singapore
+    volumes:
+      - ./data:/app/data      # session.enc, archive, cursor, logs: survive rebuilds
+    shm_size: 1gb             # Chromium needs more shared memory than Docker's 64 MB default
