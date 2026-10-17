@@ -3,7 +3,7 @@
 > **Status:** Architecture plan / v1 design
 > **Scope of v1:** Outlook on the web (Microsoft 365), Playwright driving a **local Chromium**, Telegram delivery (more channels pluggable). [Browserless](https://www.browserless.io) is an optional later runtime.
 
-> 📘 **Docs:** [commands.md](commands.md) (every command in detail) · [teaching.md](teaching.md) (how and why the code works)
+> 📘 **Docs:** [commands.md](commands.md) (every command in detail) · [teaching.md](teaching.md) (how and why the code works) · [hosting-checklist.md](hosting-checklist.md) (before letting others use it)
 
 MailBrief reads a user's work inbox every morning with a headless browser on the user's own machine. It sorts the emails inside Outlook (categories/folders, **never deletes**) and sends a summary to one or more destinations, starting with Telegram.
 

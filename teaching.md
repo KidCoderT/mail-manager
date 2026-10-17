@@ -27,6 +27,7 @@ Read it top to bottom once. After that, each section stands on its own as a refe
    - 7.11 [`archive.py`](#711-archivepy): the saved history
    - 7.12 [`notify/` and `destinations.py`](#712-notify-and-destinationspy): delivery
    - 7.13 [`main.py`](#713-mainpy): the conductor
+   - 7.14 [`progress.py`](#714-progresspy): never look stuck
 8. [The full run, end to end](#8-the-full-run-end-to-end)
 9. [Failure handling: what can go wrong and what happens](#9-failure-handling)
 10. [Security model](#10-security-model)
@@ -130,6 +131,7 @@ mail-manager/
 │   │   ├── classifier.py       Pass 1: label one email
 │   │   └── digest.py           Pass 2: write the summary
 │   ├── threads.py          conversation order, "you replied", context
+│   ├── progress.py         live progress lines, counters, spinner (to stderr)
 │   ├── cursor.py           which emails are new
 │   ├── archive.py          the saved history (monthly files, periods)
 │   ├── destinations.py     the list of Telegram chats
@@ -247,7 +249,7 @@ cursor:
 ```
 month file:
   emails:   [ EmailRecord + classification + replied + thread_size, … ]   (sorted by time)
-  digests:  [ {at: time written, text: "📬 …"} , … ]
+  digests:  [ {at: time written, scope: "new" | "this-month" | …, text: "📬 …"} , … ]
 ```
 
 ---
@@ -646,24 +648,47 @@ Splitting the work spreads the load on a shared server and uses the strong model
 ---
 
 ### 7.10 `ai/digest.py`
-**Job:** Pass 2, turn the labels into a short morning message.
+**Job:** Pass 2, turn the labels into a short summary message. It summarises **one scope**:
+
+| Scope | Covers | Sections in the digest |
+|---|---|---|
+| `new` (default) | emails new since the last commit: the *morning* digest | TOP PRIORITIES TODAY · NEEDS A REPLY · DEADLINES & MEETINGS · FYI |
+| `this-week`, `this-month`, `last-month`, `older`, `all` | a period of the saved archive | STILL OPEN · DEADLINES & MEETINGS (passed ones marked) · KEY EVENTS · NOISE |
+
+**Why different headings for periods?** "Top priorities today" makes no sense for last month. Looking back, the useful questions are *what's still open*, *which dates are coming or gone*, *what happened*, and *what was just noise*. `_prompt(scope, source)` picks the section list; the shared rules (`_COMMON`) are the same for every scope.
 
 ```
-items ← for each new email:
+items ← for each email:
     {from, subject, received, thread: short label t1/t2/…, replied, + its classification (minus model)}
-sort items by priority
 
-if more than 40 items:
-    write a partial digest for each group of 25, then a digest of those digests
+if 40 items or fewer:
+    sort by priority; ONE call, thinking ON           ← small enough to reason over everything at once
 else:
-    write one digest from all items      (AI_DIGEST_MODEL, thinking ON)
+    sort by (thread, time)                            ← keeps a conversation's emails in the same part
+    cut into parts of 25
+    summarise up to 4 parts AT ONCE, thinking OFF     ← each part is plain summarising: fast
+        report "(part 3/6)" as each finishes
+    report "(merging 6 parts)"
+    ONE merge call over the partial digests, thinking ON   ← the reasoning: connect across the period
 
-prefix: "📬 N new emails — Category count · Category count …"
+prefix: "📬 N new emails — tally"   or   "📬 N emails · this month — tally"
+
+_ask(text, thinking):
+    answer ← complete(model, text, thinking, budget 16,000 tokens if thinking else 4,000)
+    if the answer is EMPTY and thinking was on → ask again with thinking off
+    if still empty → raise an error (never show a blank digest)
 ```
-The prompt asks for plain text (Telegram doesn't render tables), with sections TOP PRIORITIES TODAY / NEEDS A REPLY / DEADLINES & MEETINGS / FYI, under 2,500 characters, inventing nothing, and:
+
+The rules every scope's prompt includes: plain text (Telegram doesn't render tables), under 2,500 characters, invent nothing, and:
 - **connect related emails:** a payment receipt means the fee reminder "looks done". The first real digest told you to pay a fee you'd already paid, which is why this rule exists;
-- **`replied: true` never goes under NEEDS A REPLY;**
+- **`replied: true` never goes under NEEDS A REPLY / STILL OPEN;**
 - **same `thread` = one conversation:** summarise together, using the latest state.
+
+**Why are the parts parallel, and why without thinking?** The first version wrote parts one after another, each with thinking on: a 357-email digest took 15+ silent minutes. Parts only need to condense 25 labelled emails, which doesn't need deep reasoning. The *merge* is where connections across the whole period are made, so that's where thinking is spent. Four at a time matches classification's concurrency, which the client's 429 backoff already copes with.
+
+**Why the empty-answer guard?** A real `this-month` merge came back completely blank. The thinking model spent its whole token budget reasoning about 6 partial digests and had nothing left for the answer. The fix has three layers: a bigger budget when thinking, a no-thinking retry if the answer is still empty, and an error rather than a silent blank digest.
+
+**Why sort big digests by thread and time instead of priority?** With priority order, a thread's urgent email and its follow-up "done, thanks" could land in different parts, and no single part could see that the matter is closed. Keeping a thread together lets each part connect it.
 
 **Why does the digest never see email bodies?** Two reasons:
 1. **Safety:** the model with the most influence over what you read sees only already-validated labels, not raw email, so a malicious email can't steer it.
@@ -671,7 +696,7 @@ The prompt asks for plain text (Telegram doesn't render tables), with sections T
 
 **Why short thread labels (`t1`) instead of real conversation IDs?** Exchange IDs are about 150 characters of noise. Short labels save tokens and are easier for the model to match.
 
-**Why batch above 40?** A model asked to summarise hundreds of items loses detail. Summarising in chunks, then summarising the summaries, keeps quality (marked `ponytail:` as fine for a few hundred).
+**Why batch above 40?** A model asked to summarise hundreds of items at once loses detail. Summarising in parts, then merging the summaries, means **every email is still read** while each call stays a manageable size (marked `ponytail:` as one merge level, fine up to a few thousand emails).
 
 ---
 
@@ -687,14 +712,15 @@ A month has only ONE of the two: writing one format deletes the other.
 
 #### Functions
 ```
-save(emails, classifications, digest, plain, tz):
+save(emails, classifications, digest, plain, tz, digest_scope="new"):
     fold any old per-day files into months first (_migrate)
     group the emails by their received month (in your time zone)
     for each month touched:
         load the month (whichever format exists)
         merge by id: new copies replace old ones; never duplicate
         sort by real time
-        if this is the current month and there's a digest → append {at, text}
+        if this is the current month and there's a digest → append {at, scope, text}
+                                   (run calls save twice: emails first, then just the digest)
         write atomically in the chosen format; delete the other format
 
 load(months = all):  decrypt/read each month; times back to real datetimes; newest first
@@ -730,16 +756,51 @@ prune(today):  if ARCHIVE_DAYS > 0, delete month files that ENDED before today �
 
 #### `notify/telegram.py`
 ```
-_api(method, payload):  POST https://api.telegram.org/bot<TOKEN>/<method>     (never logged: the URL holds the token)
+LIMIT = 4000                       (Telegram allows 4096; the margin fits "· k/n" and "(cont.)")
+size(text) = UTF-16 length         (how Telegram counts: an emoji is 2)
 
-split(text, limit 4096):
-    add lines one by one to the current chunk
-    if adding a line would exceed the limit → start a new chunk
-    if a single line is longer than the limit → cut it hard
-send(chat_id, text):  send each chunk as its own message
-find_chats():         getUpdates → chats that recently messaged the bot (setup only)
+_api(method, payload):
+    POST https://api.telegram.org/bot<TOKEN>/<method>     (never logged: the URL holds the token)
+    on HTTP 429 (flood control): wait Telegram's retry_after seconds, retry (up to 3 times)
+    on any other error: raise TelegramError("<code> <Telegram's description>")
+
+is_heading(line):   UPPERCASE words like "NOISE", "KEY EVENTS", "DEADLINES & MEETINGS",
+                    optionally "(a note)" and/or ":", and never a "•" bullet
+
+messages(text):
+    fits in LIMIT → [text]                                   (the usual morning digest: one message)
+    else:
+        blocks ← split_sections(text)       a heading starts a new block; the "📬 …" header line
+                                            joins the FIRST section (alone it would be noise)
+        for each block:
+            fits → one message
+            else → split on line breaks into BALANCED parts (≈ equal sizes, each ≤ LIMIT);
+                   parts after the first start with "<HEADING> (cont.)"
+                   (a single line longer than a message is the only thing ever cut mid-line)
+        tag the first line of every message " · k/n"
+
+send(chat_id, text):
+    for each message, 0.5 s apart:
+        try to send; on failure remember "message k failed: <description>" and CONTINUE
+    any failures → raise "sent 4/5; message 3 failed: …"
+    else → return how many messages were sent
+
+find_chats():  getUpdates → chats that recently messaged the bot (setup only)
 ```
-**Why split on lines?** Telegram rejects messages over 4,096 characters. Cutting mid-line would break bullet points; line boundaries keep the digest readable.
+
+**Why one message per section?** A digest cut wherever 4,096 characters happened to fall reads badly: a section starts at the bottom of one message and finishes at the top of the next. Sections are the natural reading units, so each gets its own message, which is easy to scroll and easy to find later ("where's the NOISE part?").
+
+**Why balanced parts instead of filling each message?** Greedy filling turned a 4,100-unit section into a 3,990-unit message plus a lonely 110-unit "(cont.)". Splitting into roughly equal halves reads much better.
+
+**Why split on lines?** Cutting mid-line would break a bullet in two. Line boundaries keep every bullet whole.
+
+**Why UTF-16 and a margin?** Telegram counts length in UTF-16 units, so 📬 counts as 2. Counting Python characters let a piece land just over Telegram's real limit and get rejected. The 96-unit margin also absorbs the `· k/n` tag and the `(cont.)` line.
+
+**Why `· k/n`?** With five messages arriving together, a missing one is obvious at a glance.
+
+**Why pacing, `retry_after`, and continuing past failures?** Several messages in a burst can trip Telegram's flood control. Telegram's reply says exactly how long to wait, so the bot waits that long. And if one message still fails, the others are still worth delivering. The summary says exactly which one failed and why.
+
+**Why keep Telegram's description?** "HTTP Error 400" says nothing. Telegram's JSON body says *why*: "message is too long", "chat not found", "bot was blocked by the user". Each of those needs a different fix.
 
 **Why is the bot send-only?** If the bot listened for `/start`, anyone who found it could register. MailBrief never polls; `getUpdates` runs only during `add-destination`, on your machine. Disabling group joins in BotFather closes the last gap.
 
@@ -747,7 +808,9 @@ find_chats():         getUpdates → chats that recently messaged the bot (setup
 ```
 ADAPTERS = {"telegram": telegram.send}
 ```
-**Why a dictionary?** Adding WhatsApp or Slack later is one function plus one entry. No class hierarchy is needed for one method.
+**Why a dictionary?** Adding WhatsApp or Slack later is one function plus one entry. No class hierarchy is needed for one method. Each adapter returns how many messages it sent, which `deliver()` prints (`Sent to telegram: Tejas (private) (5 messages)`).
+
+**Resending:** `mailbrief emails --digest --send` hands the latest *saved* digest to the same `deliver()`. **Why?** A month digest costs about 5 minutes of AI time. If sending failed, rewriting it would be waste; the text is already in the archive.
 
 #### `destinations.py`
 A JSON list in `data/destinations.json` with `load()` and `add()` (re-adding the same chat replaces it). A `ponytail:` comment notes it moves into a database when there are multiple users.
@@ -760,7 +823,7 @@ A JSON list in `data/destinations.json` with `load()` and `add()` (re-adding the
 #### `main()`
 ```
 load .env
-make console output UTF-8          ← emoji in subjects crashed Windows' default encoding when piped
+make stdout AND stderr UTF-8       ← emoji in subjects and the ✓ / ✗ progress marks crash Windows' default encoding when piped
 parse the command: login | run | emails | add-destination
 dispatch to the matching function; exit with its code
 ```
@@ -770,6 +833,13 @@ dispatch to the matching function; exit with its code
 
 Small helpers:
 - **`_needs_ai(stored)`:** true unless the archive already holds a real, full-text classification. This is what makes reruns and backfill never repeat AI work.
+- **`digest_set(scope, targets, cursor)`:** which emails a digest covers:
+  ```
+  scope "new"  → select_new(targets, cursor)          (with --all, targets = whole inbox; this keeps it to new mail)
+  any period   → every archived email in that period  ("all" = no filter), oldest first
+  then drop your sent replies, other-folder copies and anything never classified
+  ```
+  **Why read periods from the archive?** The digest only needs classifications, which are already saved. A month digest therefore costs no extra Outlook scrolling or classification, and includes mail saved by earlier runs and the backfill.
 - **`deliver(text)`:** loops over active destinations; one failure is printed and the loop continues; returns "at least one succeeded".
 
 #### `show_emails(...)`: the viewer
@@ -798,11 +868,41 @@ With `--chat-id`, save it directly. Otherwise list the chats that messaged the b
 
 ---
 
+### 7.14 `progress.py`
+**Job:** show what the app is doing right now, so a long run never looks stuck.
+
+It exists because of a real moment: `run --all --send` printed one line and then sat silent for over 15 minutes while it wrote a huge digest. From the outside, "working hard" and "hung" looked identical.
+
+```
+step(msg)               → "[00:12] Opening Outlook…"                one line, time since start
+count(label, n, total)  → on a terminal: redraw ONE line in place   "[00:20] Fetching full text 120/366"
+                          when piped:   print only at 25/50/75/100%
+working(label)          → a context ("with" block) around one long job:
+    on a terminal: a background thread redraws "| label (part 3/6)… 23s" every 0.2 s
+    when piped:    "label…" at the start
+    at the end:    "✓ label (41s)", or "✗ label (41s)" if the job raised an error
+    .note(text)    → extra live detail, e.g. "(part 3/6)" / "(merging 6 parts)"
+```
+
+**Design choices and why:**
+- **Everything goes to stderr.** `run --json` promises pure JSON on stdout. Progress is about the run, not its result, which is exactly what stderr is for.
+- **The terminal check (`isatty`).** Redrawing a line uses `\r` (carriage return: jump back to the start of the line). In a terminal that animates nicely. In a log file every redraw would be saved as junk. So on a terminal it's live, and when piped it prints plain lines at 25% steps. A scheduled job's log stays readable (verified: zero mid-line `\r` in a real log).
+- **A spinner thread for single long calls.** A counter can't move while you wait on *one* AI call that takes 40 s. A small background thread redrawing elapsed seconds proves the program is alive. It stops cleanly when the job ends, even on an error.
+- **One lock around writing.** The spinner thread and the main thread both print; the lock stops their output interleaving mid-line. `_open_line` remembers that a `\r` line is on screen so the next normal line starts on a fresh line.
+- **✗ on failure.** A ✓ printed by a `finally` block would lie when something crashed.
+- **Plain ASCII spinner (`|/-\`).** It renders in every Windows terminal. The ✓ and ✗ marks are safe because `main()` makes stderr UTF-8.
+- **Where it's called:** the reader (Opening, Signed in, Loading Focused/Other n/total, Fetching full text) and `main.run` (Loading saved emails, Fetching images, Classifying n/N, Saving, the digest spinner, Sending). The modules call it directly: it's one small module with no setup, so threading a callback through every function would add code for no benefit.
+
+---
+
 ## 8. The full run, end to end
 
 Here's `mailbrief run` as one story, with the reason for each step.
 
+Every numbered step also prints a progress line (`[00:17] Loading Focused tab 288/288`, `Classifying 9/9`, a spinner while the digest is written; section 7.14), so you can always see where it is.
+
 ```
+0  scope ← --digest value, or "new" (or nothing for --backfill without --digest)
 1  session ← load encrypted session              (no session → "run login", exit 2)
 2  archived ← every saved email, by id           (so we can skip repeat AI work)
 3  cursor ← load; start ← cursor time or now−24h (--all/--backfill: no start)
@@ -816,13 +916,14 @@ Here's `mailbrief run` as one story, with the reason for each step.
    inbox   ← records that are in the inbox and not from you
    targets ← all inbox (--all) or select_new(inbox, cursor)
    todo    ← targets not already properly classified in the archive
-   images  ← for each todo email, fetch_images   (only what the AI will look at)
+   images  ← for each todo email with images, fetch_images   (only what the AI will look at)
    save refreshed session cookies
    ── browser closed ─────────────────────────────────────────────────
 
 5  print the summary line; warn if Outlook loaded fewer conversations than it reported,
    or your address wasn't found, or only previews were available
-   if no targets → exit 0
+   if no targets AND the scope is "new" → "No new emails, so no digest", exit 0
+   (a period digest carries on: it can summarise saved mail even when nothing is new)
 
 6  threads:
    pool ← archived messages of these conversations + everything fetched now (fresh wins)
@@ -841,12 +942,22 @@ Here's `mailbrief run` as one story, with the reason for each step.
            (failure → Unclassified + warning; retried next run)
    backfill: after every 25 finished emails → save them to the archive now
 
-8  digest ← (not backfill) digest(targets, their classifications)
-9  print emails (or JSON), the digest, timings
-10 archive: prune if configured; save ALL fetched records + the digest
-11 --send → deliver; --commit or --backfill → advance the cursor
-   (refused if previews were used, or the digest wasn't delivered anywhere)
+8  archive: prune if configured; save ALL fetched records       ← BEFORE the digest:
+                                                                  a period digest reads them back
+9  if there is a scope:
+       emails ← digest_set(scope, targets, cursor)
+       digest ← digest(emails, …, scope)                          (spinner: part k/n, merging)
+       save the digest with its scope
+10 print emails (or JSON), the digest, timings, where it saved
+11 --send and a digest exists → deliver
+   --commit or --backfill → advance the cursor
+   (refused if previews were used, or a digest was sent but reached nobody;
+    "no digest to send" counts as fine)
 ```
+
+**Why save before writing the digest?** A `--digest this-month` run must include the emails this run just fetched. Saving first means the digest simply reads one consistent source: the archive.
+
+**Why does `--all` no longer widen the digest?** `--all` is about *processing* (re-check and save everything). The digest is about *summarising*. Tying them together made `run --all --send` try to summarise 357 emails into a morning message: 15+ silent minutes, then two months of mail on your phone. Now each flag does one thing, and `--digest SCOPE` is how you ask for a bigger summary.
 
 **Why one worker per conversation, in order?** When a reply is classified, its parent's fresh summary must already exist so it appears in the context. Processing a conversation's emails in sequence guarantees that, while different conversations still run in parallel for speed.
 
@@ -867,8 +978,15 @@ Here's `mailbrief run` as one story, with the reason for each step.
 | AI rate-limited (429) / 5xx | Backoff and retry up to 5 times | The shared server just needs a moment |
 | One AI call keeps failing | That email becomes Unclassified, run continues; retried next run | One email must not sink the run |
 | Model returns bad JSON | One retry, then Unclassified | Never pass malformed data forward |
+| Digest model returns an empty answer | Retried without thinking; still empty → error, the step shows ✗ | A blank digest must never be shown or sent |
+| A step is slow | Live counter / spinner with seconds | You can tell "slow" from "stuck" |
+| Nothing new (default scope) | "No new emails, so no digest", exit 0 | Never send an empty digest |
 | Saving the archive fails | Warning; digest and delivery still happen | The digest is the main product |
 | One Telegram destination fails | Printed; others still get it | Independent destinations |
+| Digest too long for one message | One message per section, oversize sections split on lines, tagged k/n | Readable, and every message is accepted |
+| Telegram flood control (429) | Waits Telegram's `retry_after`, retries up to 3 times | Telegram says exactly how long to wait |
+| One message of a multi-part digest fails | The rest still send; "sent 4/5; message 3 failed: <reason>" | Partial delivery beats none; the reason is shown |
+| A digest was written but not delivered | `mailbrief emails --digest --send` resends it | No need to spend AI time again |
 | No destination reached | Cursor not advanced | Don't mark mail "done" that nobody saw |
 | Crash mid-write | Old file intact (temp file + rename) | Never corrupt state |
 | Wrong encryption key | Error names the file and the cause | Easier to diagnose than a raw crypto error |
@@ -912,11 +1030,20 @@ Each module with real logic has one small test script, `tests/test_<module>.py`:
 | `test_owa_network` | finding conversations/items anywhere in JSON, dedupe, totals, GetItem records, body cleaning & cap, image filter, global IDs, your address |
 | `test_cursor` | 24 h first run, ≥ plus ID dedupe at the same second, keeps 500 IDs, refuses previews |
 | `test_ai` | JSON extraction from messy replies, validation, quote trimming |
-| `test_telegram` | splitting under 4,096 chars on lines, hard-splitting long lines, no text lost |
+| `test_telegram` | short text = one message; long digest = one message per section with the header on the first and `k/n` tags; oversize sections split on lines with "(cont.)"; nothing lost and order kept; UTF-16 sizing with emoji; hard-cut only for absurd lines; heading detection (yes: "FYI (one line each…)"; no: bullets, normal sentences) |
 | `test_archive` | encryption round-trip, plain JSON, merge without duplicates, month split, time-zone sorting, format switch, migration, wrong key, period boundaries incl. a year rollover, pruning |
 | `test_threads` | reply-tree ordering (the "Ana replies to your reply after Bob" case), depth, `replied` only counting later messages, context lines |
+| `test_progress` | when piped: timestamped step lines, counters only at 25% steps, `working` start and ✓ lines, ✗ on failure, never a `\r` |
 
-**Real-world checks** were also done against your actual inbox during development: unread emails stayed unread, all 344 conversations captured, backfill interrupted and resumed, a rerun made 0 AI calls, and a thread with your forward was shown correctly.
+**Real-world checks** were also done against your actual inbox during development:
+- unread emails stayed unread;
+- all 344 conversations captured;
+- backfill interrupted and resumed;
+- a rerun made 0 AI calls;
+- a thread with your forward was shown correctly;
+- `run --all` dropped from 15+ silent minutes to 58 s with live progress;
+- a redirected log had no `\r` redraws;
+- a `this-month` digest of 149 emails ran in 6 parallel parts and produced STILL OPEN / DEADLINES / KEY EVENTS / NOISE.
 
 ---
 
@@ -935,6 +1062,10 @@ Each of these was found by running against real Outlook, and each shaped the cod
 9. **"Couldn't find your address."** StartupData is JSON served with a JavaScript content type, so the JSON filter dropped it. *Lesson:* don't trust content-type labels; match on what you actually need.
 10. **Only 180 of 344 loaded.** Outlook paused between pages longer than the 5 s stall rule. *Lesson:* timeouts against real services need slack, plus a warning when results are incomplete.
 11. **Wrong order across time zones.** Times with `+05:30` and `Z` sorted as text. *Lesson:* compare real datetimes, never formatted strings.
+12. **The silent 15-minute digest.** `run --all --send` widened the digest to all 357 emails: 15 sequential thinking calls, no output, then two months of mail headed for your phone. *Lessons:* one flag, one job (`--all` processes, `--digest` summarises); anything that can take minutes must show progress; and parallelise independent AI calls.
+13. **The blank month digest.** The merge call, with thinking on, used its entire token budget reasoning and returned nothing, so the digest printed only its header line. *Lessons:* thinking models can "think out" their budget; check for empty answers, retry differently, and fail loudly rather than show a blank.
+14. **`--backfill --send` refused to advance the cursor.** With no digest to send, "delivered" stayed false. *Lesson:* "nothing to deliver" and "delivery failed" are different states; don't let one boolean stand for both.
+15. **The digest that never arrived.** A long digest silently failed to reach Telegram. The splitter counted Python characters with no margin (Telegram counts UTF-16), cut sections wherever the limit fell, didn't handle flood control, and reported only "HTTP Error 400". *Lessons:* measure limits the way the receiving system measures them, leave a margin, split on meaningful boundaries (sections, then lines), respect `retry_after`, and keep the remote system's error message: it usually tells you the fix.
 
 ---
 
@@ -942,6 +1073,7 @@ Each of these was found by running against real Outlook, and each shaped the cod
 
 **Limits today** (most are marked `ponytail:` in the code):
 - Every run scrolls the **whole** inbox, about 20–30 s here. Very large inboxes would want an early stop at the cursor.
+- **Wide digests take minutes** (about 5 for a month of ~150 emails). Parts run in parallel, but the final thinking merge is one long call. Fine on demand, not for every morning.
 - Mail moved into the inbox late can fall behind the cursor and be skipped.
 - Only the **Inbox** is read for new mail, though thread context includes other folders.
 - A **forward** you sent counts as "replied".

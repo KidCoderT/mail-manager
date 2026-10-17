@@ -88,7 +88,8 @@ def months() -> list[str]:
     return sorted({p.stem for p in ARCHIVE_DIR.iterdir() if p.suffix in EXTS and _MONTH.match(p.stem)})
 
 
-def save(emails: list[dict], results: list[dict], digest: str | None, plain: bool, tz, now: datetime | None = None) -> list[Path]:
+def save(emails: list[dict], results: list[dict], digest: str | None, plain: bool, tz,
+         now: datetime | None = None, digest_scope: str = "new") -> list[Path]:
     """Merge emails (by id, with their classification) into month files; the digest goes into this month's."""
     _migrate()
     now = now or datetime.now(tz)
@@ -103,7 +104,7 @@ def save(emails: list[dict], results: list[dict], digest: str | None, plain: boo
         data = _load_month(month)
         _merge(data, new)
         if digest and month == f"{now:%Y-%m}":
-            data["digests"].append({"at": now.isoformat(), "text": digest})
+            data["digests"].append({"at": now.isoformat(), "scope": digest_scope, "text": digest})
         paths.append(_write_month(month, data, plain))
     return paths
 

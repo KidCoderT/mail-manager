@@ -3,6 +3,7 @@ import sys
 import time
 from urllib.parse import unquote, urlparse
 
+from mailbrief import progress
 from mailbrief.browser.owa_network import (
     find_user_email,
     getitem_body,
@@ -71,10 +72,13 @@ def _load_view(page, responses: list, view, max_scrolls: int) -> list:
     box = page.locator(MESSAGE_LIST).first.bounding_box()
     if box:
         page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    label = {0: "Loading Focused tab", 1: "Loading Other tab"}.get(view, "Loading inbox")
     last, last_growth = -1, time.monotonic()
     for _ in range(max_scrolls if box else 0):
         drain()
         count, total = len(parse_messages(payloads)), view_total(payloads)
+        if total:
+            progress.count(label, min(count, total), total)
         if count != last:
             last, last_growth = count, time.monotonic()
         # Done when everything is loaded, or Outlook sent nothing new for STALL_S (it can be slow per page).
@@ -96,15 +100,18 @@ def read_inbox(page, timeout_s: int = 60, max_scrolls: int = 300) -> dict:
     # StartupData is JSON served as application/x-javascript, so the JSON filter above misses it.
     page.on("response", lambda r: startup_responses.append(r) if "startupdata" in r.url.lower() else None)
     page.on("request", lambda r: _track_auth(auth, r))
+    progress.step("Opening Outlook…")
     page.goto(INBOX_URL, wait_until="domcontentloaded")
 
     # Wait for either the message list or a redirect to the Microsoft login page.
     for _ in range(timeout_s * 2):
         if (urlparse(page.url).hostname or "") in LOGIN_HOSTS:
+            progress.step("Session expired (redirected to the Microsoft login page)")
             return {"expired": True, "messages": [], "total": None, "urls": [], "auth": auth}
         if page.locator(MESSAGE_ROW).count():
             break
         page.wait_for_timeout(500)
+    progress.step("Signed in; loading the inbox list…")
     page.wait_for_timeout(3000)  # let the list's follow-up requests finish
 
     # With Focused Inbox on, the list only shows one tab; load "Other" too, then switch back.
@@ -151,6 +158,7 @@ def fetch_emails(page, auth: dict, conversations: list[dict], me: str | None = N
             print(f"warning: GetItem failed ({status}); falling back to list previews", file=sys.stderr)
             return preview_records(conversations), False
         records += parse_items(resp.json())
+        progress.count("Fetching full text", min(n + GETITEM_BATCH, len(ids)), len(ids))
     for r in records:
         r["in_inbox"] = r["id"] in inbox_ids
         r["from_me"] = bool(me) and r["sender_email"].lower() == me.lower()

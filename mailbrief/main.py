@@ -25,10 +25,10 @@ def _needs_ai(stored: dict | None) -> bool:
     return (stored.get("classification") or {}).get("category") in (None, "Unclassified")
 
 
-def run(show_all=False, as_json=False, commit=False, send=False, plain=False, backfill=False) -> int:
+def run(show_all=False, as_json=False, commit=False, send=False, plain=False, backfill=False, digest_scope=None) -> int:
     from playwright.sync_api import sync_playwright
 
-    from mailbrief import archive, threads
+    from mailbrief import archive, progress, threads
     from mailbrief import cursor as cur
     from mailbrief.ai.classifier import classify
     from mailbrief.ai.digest import digest
@@ -37,12 +37,15 @@ def run(show_all=False, as_json=False, commit=False, send=False, plain=False, ba
     from mailbrief.session import manager
 
     show_all = show_all or backfill
+    # The morning digest by default; a backfill writes none unless a scope is asked for explicitly.
+    scope = digest_scope or (None if backfill else "new")
     session = manager.load()
     if session is None:
         print("No saved session. Run `mailbrief login` first.")
         return 2
     tz = _tz()
     log = sys.stderr if as_json else sys.stdout  # in --json mode stdout is pure JSON
+    progress.step("Loading saved emails…")
     try:
         archived = {e["id"]: e for e in archive.load()[0]}
     except archive.ArchiveError as e:
@@ -67,15 +70,19 @@ def run(show_all=False, as_json=False, commit=False, send=False, plain=False, ba
             inbox = [r for r in records if r["in_inbox"] and not r["from_me"]]
             targets = sorted(inbox if show_all else cur.select_new(inbox, cursor), key=lambda r: r["received_at"])
             todo = [e for e in targets if _needs_ai(archived.get(e["id"]))]
-            images = {e["id"]: fetch_images(page, result["auth"], e) for e in todo}  # memory only
+            with_images = [e for e in todo if e.get("image_attachments")]
+            images = {e["id"]: [] for e in todo}
+            for n, e in enumerate(with_images, 1):
+                images[e["id"]] = fetch_images(page, result["auth"], e)  # memory only
+                progress.count("Fetching images", n, len(with_images))
             manager.save(context, session["user_agent"])  # Microsoft rotates auth cookies
         finally:
             browser.close()
     t_read = time.time() - t0
 
     total = result["total"] if result["total"] is not None else "?"
-    scope = "all" if show_all else f"since {start.astimezone(tz):%Y-%m-%d %H:%M}"
-    print(f"{len(targets)} inbox emails ({scope}), {len(todo)} need the AI, {len(targets) - len(todo)} already saved; "
+    window = "all" if show_all else f"since {start.astimezone(tz):%Y-%m-%d %H:%M}"
+    print(f"{len(targets)} inbox emails ({window}), {len(todo)} need the AI, {len(targets) - len(todo)} already saved; "
           f"inbox: {len(result['messages'])} of {total} conversations; {len(records) - len(inbox)} of your replies / other-folder messages.", file=log)
     if show_all and isinstance(result["total"], int) and len(result["messages"]) < result["total"]:
         print(f"warning: Outlook only loaded {len(result['messages'])} of {result['total']} conversations this time; "
@@ -88,7 +95,8 @@ def run(show_all=False, as_json=False, commit=False, send=False, plain=False, ba
         print("Nothing parsed. Outlook JSON endpoints seen (share these to adjust the parser):", file=log)
         for url in result["urls"]:
             print(f"  {url}", file=log)
-    if not targets:
+    if not targets and scope in (None, "new"):
+        print("No new emails, so no digest.", file=log)
         return 0
 
     # Threads: earlier messages from the archive plus everything fetched now (fresh copies win).
@@ -130,22 +138,47 @@ def run(show_all=False, as_json=False, commit=False, send=False, plain=False, ba
     t1 = time.time()
     done, pending = 0, []
     ordered = sorted(by_conv, key=lambda cid: by_conv[cid][0]["received_at"])  # oldest conversations first
+    if todo:
+        progress.step(f"Classifying {len(todo)} emails with the AI…")
     with ThreadPoolExecutor(AI_THREADS) as ex:
         for future in as_completed([ex.submit(work, cid) for cid in ordered]):
             batch = future.result()
             done += len(batch)
             pending += batch
+            progress.count("Classifying", done, len(todo))
             if backfill and len(pending) >= BACKFILL_SAVE_EVERY:  # Ctrl+C keeps everything saved so far
                 archive.save(pending, [e["classification"] for e in pending], None, plain, tz)
-                print(f"  classified {done}/{len(todo)} (saved)", file=log)
                 pending = []
     t_classify = time.time() - t1
 
-    t2 = time.time()
-    results = [e["classification"] for e in targets]
-    text = None if backfill else digest(targets, results)
-    t_digest = time.time() - t2
+    # Save before the digest: a period digest reads this run's emails back from the archive.
+    try:  # saving is a convenience: a failure here must not lose the digest or block delivery
+        progress.step("Saving to the archive…")
+        archive.prune(datetime.now(tz).date())
+        paths = archive.save(records, [r["classification"] for r in records], None, plain, tz)
+        kind = "plain JSON" if plain else "encrypted"
+        names = ", ".join(p.name for p in paths) or "nothing new"
+        saved_msg = f"Saved ({kind}): {names} in {archive.ARCHIVE_DIR}  (view with `mailbrief emails`)"
+    except Exception as e:  # noqa: BLE001
+        saved_msg = f"warning: archive not saved ({type(e).__name__}: {e})"
 
+    text, t_digest = None, 0.0
+    if scope:
+        digest_emails = digest_set(scope, targets, cursor, tz, log)
+        if digest_emails:
+            t2 = time.time()
+            parts = (len(digest_emails) + 24) // 25 if len(digest_emails) > 40 else 1
+            label = f"Writing the {scope.replace('-', ' ')} digest of {len(digest_emails)} emails"
+            with progress.working(label + (f" in {parts} parts" if parts > 1 else "")) as w:
+                text = digest(digest_emails, [e["classification"] for e in digest_emails], scope,
+                              on_part=w.note)
+            t_digest = time.time() - t2
+            try:
+                archive.save([], [], text, plain, tz, digest_scope=scope)
+            except Exception as e:  # noqa: BLE001
+                saved_msg += f"; warning: digest not saved ({type(e).__name__}: {e})"
+
+    results = [e["classification"] for e in targets]
     if as_json:
         json.dump(targets, sys.stdout, default=lambda o: o.isoformat(), ensure_ascii=False, indent=2)
         print()
@@ -158,19 +191,13 @@ def run(show_all=False, as_json=False, commit=False, send=False, plain=False, ba
     if text:
         print(f"\n{text}\n", file=log)
     unclassified = sum(r["category"] == "Unclassified" for r in results)
-    with_images = sum(bool(i) for i in images.values())
-    print(f"timing: read {t_read:.0f}s, classify {t_classify:.0f}s ({len(todo)} emails, {with_images} with images)"
-          + ("" if backfill else f", digest {t_digest:.0f}s") + (f"; {unclassified} unclassified" if unclassified else ""), file=log)
+    print(f"timing: read {t_read:.0f}s, classify {t_classify:.0f}s ({len(todo)} emails, {len(with_images)} with images)"
+          + (f", digest {t_digest:.0f}s" if text else "") + (f"; {unclassified} unclassified" if unclassified else ""), file=log)
+    print(saved_msg, file=log)
 
-    try:  # saving is a convenience: a failure here must not lose the digest or block delivery
-        archive.prune(datetime.now(tz).date())
-        paths = archive.save(records, [r["classification"] for r in records], text, plain, tz)
-        kind = "plain JSON" if plain else "encrypted"
-        print(f"Saved ({kind}): {', '.join(p.name for p in paths)} in {archive.ARCHIVE_DIR}  (view with `mailbrief emails`)", file=log)
-    except Exception as e:  # noqa: BLE001
-        print(f"warning: archive not saved ({type(e).__name__}: {e})", file=log)
-
-    # Nothing to deliver (no --send, or a backfill without a digest) counts as delivered.
+    # Nothing to deliver (no --send, or no digest this run) counts as delivered.
+    if send and text:
+        progress.step("Sending the digest…")
     delivered = deliver(text, log) if send and text else True
     if commit or backfill:
         if not delivered:
@@ -185,6 +212,24 @@ def run(show_all=False, as_json=False, commit=False, send=False, plain=False, ba
     return 0
 
 
+def digest_set(scope: str, targets: list[dict], cursor: dict, tz, log) -> list[dict]:
+    """The emails a digest of `scope` covers: new since the cursor, or an archive period ("all" = everything)."""
+    from mailbrief import archive
+    from mailbrief import cursor as cur
+
+    if scope == "new":
+        emails = cur.select_new(targets, cursor)  # with --all, targets is the whole inbox; the digest stays on new mail
+    else:
+        today = datetime.now(tz).date()
+        emails = [e for e in archive.load()[0] if scope == "all" or archive.in_period(e, scope, today, tz)]
+        emails.sort(key=lambda e: e["received_at"])
+    # Only incoming mail with a real classification: not your sent replies or other-folder copies.
+    emails = [e for e in emails if (e.get("classification") or {}).get("category") not in (None, "Sent", "Elsewhere")]
+    if not emails:
+        print(f"No emails for a {scope!r} digest.", file=log)
+    return emails
+
+
 def deliver(text: str, log) -> bool:
     """Send to every active destination; True if at least one got it. One failure never blocks the others."""
     from mailbrief import destinations
@@ -197,9 +242,9 @@ def deliver(text: str, log) -> bool:
     sent = 0
     for d in targets:
         try:
-            ADAPTERS[d["type"]](d["target"], text)
+            n = ADAPTERS[d["type"]](d["target"], text)
             sent += 1
-            print(f"Sent to {d['type']}: {d['label']}", file=log)
+            print(f"Sent to {d['type']}: {d['label']} ({n} message{'s' if n != 1 else ''})", file=log)
         except Exception as e:  # noqa: BLE001 - report and continue with the next destination
             print(f"Failed to send to {d['type']}: {d['label']} ({type(e).__name__}: {e})", file=log)
     return sent > 0
@@ -216,7 +261,7 @@ def _tag(e: dict) -> str:
     return f"[{c.get('category', '?')}/p{c.get('priority', '?')}]"
 
 
-def show_emails(period, day, search, show, thread, digest, export) -> int:
+def show_emails(period, day, search, show, thread, digest, export, send=False) -> int:
     """Browse the saved archive: threaded list by period/day/search, open one, a whole thread, digests, export."""
     from mailbrief import archive, threads
 
@@ -236,9 +281,13 @@ def show_emails(period, day, search, show, thread, digest, export) -> int:
         want = on_day or today
         found = [d for d in all_digests if datetime.fromisoformat(d["at"]).astimezone(tz).date() == want]
         for d in found:
-            print(f"── digest from {datetime.fromisoformat(d['at']).astimezone(tz):%d %b %H:%M} ──\n{d['text']}\n")
+            scope = d.get("scope", "new").replace("-", " ")
+            print(f"── {scope} digest, written {datetime.fromisoformat(d['at']).astimezone(tz):%d %b %H:%M} ──\n{d['text']}\n")
         if not found:
             print(f"No digest saved for {want}.")
+            return 1 if send else 0
+        if send:  # resend the latest one: no Outlook, no AI
+            return 0 if deliver(found[-1]["text"], sys.stdout) else 1
         return 0
 
     emails = all_emails
@@ -340,7 +389,9 @@ def add_destination(type_: str, chat_id: str | None) -> int:
 
 def main() -> None:
     load_dotenv()
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # emoji subjects crash Windows' cp1252 when piped
+    # Emoji subjects and progress marks (✓) crash Windows' cp1252 encoding when output is piped.
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(prog="mailbrief", description="AI morning email digest for Outlook")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("login", help="sign in to Outlook once in a visible browser")
@@ -352,6 +403,10 @@ def main() -> None:
     run_p.add_argument("--send", action="store_true", help="send the digest to all destinations")
     run_p.add_argument("--commit", action="store_true", help="mark these emails processed (advance the cursor)")
     run_p.add_argument("--no-password", action="store_true", help="save the archive as plain JSON instead of encrypted")
+    run_p.add_argument("--digest", dest="digest_scope", metavar="SCOPE",
+                       choices=["new", "this-week", "this-month", "last-month", "older", "all"],
+                       help="what the digest covers: new (default: since the last commit), this-week, this-month, "
+                            "last-month, older, all (read from the saved archive)")
     em_p = sub.add_parser("emails", help="browse saved emails (this week by default), grouped by thread")
     em_p.add_argument("--period", choices=["this-week", "this-month", "last-month", "older"])
     em_p.add_argument("--day", help="one day, e.g. 2026-10-16")
@@ -360,6 +415,7 @@ def main() -> None:
     em_p.add_argument("--thread", type=int, metavar="N", help="print the whole conversation of email #N")
     em_p.add_argument("--digest", action="store_true", help="show the saved digest(s) for --day (default today)")
     em_p.add_argument("--export", metavar="FILE", help="write the listed emails to FILE as plain JSON")
+    em_p.add_argument("--send", action="store_true", help="with --digest: resend the latest saved digest to all destinations")
     dest_p = sub.add_parser("add-destination", help="add where digests are sent (local setup only)")
     dest_p.add_argument("type", choices=["telegram"])
     dest_p.add_argument("--chat-id", help="skip the lookup and add this chat id directly")
@@ -373,6 +429,9 @@ def main() -> None:
     if args.command == "add-destination":
         sys.exit(add_destination(args.type, args.chat_id))
     if args.command == "emails":
-        sys.exit(show_emails(args.period, args.day, args.search, args.show, args.thread, args.digest, args.export))
+        if args.send and not args.digest:
+            print("--send works with --digest (it resends the latest saved digest).")
+            sys.exit(2)
+        sys.exit(show_emails(args.period, args.day, args.search, args.show, args.thread, args.digest, args.export, args.send))
     sys.exit(run(show_all=args.all, as_json=args.json, commit=args.commit, send=args.send,
-                 plain=args.no_password, backfill=args.backfill))
+                 plain=args.no_password, backfill=args.backfill, digest_scope=args.digest_scope))
