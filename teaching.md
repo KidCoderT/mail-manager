@@ -29,6 +29,7 @@ Read it top to bottom once. After that, each section stands on its own as a refe
    - 7.13 [`main.py`](#713-mainpy): the conductor
    - 7.14 [`progress.py`](#714-progresspy): never look stuck
    - 7.15 [`service.py`](#715-servicepy): running on its own (schedule, stop, autostart, hosting)
+   - 7.16 [`labels.py` and `outlook_writer.py`](#716-labelspy-and-outlook_writerpy): MB: labels in Outlook, the one write
 8. [The full run, end to end](#8-the-full-run-end-to-end)
 9. [Failure handling: what can go wrong and what happens](#9-failure-handling)
 10. [Security model](#10-security-model)
@@ -52,7 +53,7 @@ Read it top to bottom once. After that, each section stands on its own as a refe
 
 **The hard constraint:** it's a **work/university** Outlook account. Normally you'd use Microsoft's official API (Microsoft Graph), but that needs an administrator to approve an "app registration". You can't do that yourself. So MailBrief uses **the same website you use**, Outlook on the web, through an automated browser. To Microsoft, it looks like you using Outlook in a browser.
 
-**What it never does:** delete, move, send, reply, or even mark email as read. It's an observer.
+**What it never does:** delete, move, send, reply, or even mark email as read. The **one** thing it changes is its own labels: Outlook categories named `MB: …` (section 7.16), and code refuses every other kind of write.
 
 ---
 
@@ -92,7 +93,7 @@ These ideas explain most decisions in the code. When something looks odd, one of
 
 1. **Read the data, not the screen.** Screens change with every Outlook redesign; data formats change much less. So the app listens to Outlook's JSON instead of scraping text off the page.
 2. **Never click what you don't need to.** Clicking opens emails (marking them read) and depends on fragile button positions. The app clicks exactly one kind of thing: the Focused/Other **tab**. Everything else uses data calls.
-3. **Read-only by design.** No code path can delete, send or move mail. A bug can't do damage that the code simply can't do.
+3. **Read-only by design, with one guarded exception.** No code path can delete, send or move mail. The only write is MailBrief's own `MB:` categories, and one function (`check_request`) inspects every outgoing request and refuses anything else. A bug can't do damage that the code simply can't do.
 4. **AI reads and decides; code does the rest.** Navigation, parsing, deduplication and ordering are plain code: fast, free, predictable. The AI only does what code can't: understand language and images.
 5. **Email content is untrusted.** Anyone can send you an email saying "ignore your instructions and…". The AI that reads email has no tools and can only return a label. The model that writes the digest never sees email bodies, only the first model's labels.
 6. **Your data stays as local as possible.** The browser runs on your PC, the archive is encrypted on your disk, the AI is NUS's own endpoint. Only the summary-level digest leaves, to Telegram.
@@ -127,7 +128,8 @@ mail-manager/
 │   ├── browser/
 │   │   ├── connect.py          get a browser (local, or remote later)
 │   │   ├── outlook_reader.py   drive Outlook: open, listen, scroll, call GetItem
-│   │   └── owa_network.py      understand Outlook's JSON (pure functions)
+│   │   ├── owa_network.py      understand Outlook's JSON + build requests + the write guard (pure)
+│   │   └── outlook_writer.py   the ONLY code that changes Outlook: categories only
 │   ├── session/
 │   │   ├── login_once.py       the one-time visible login
 │   │   └── manager.py          save/load the encrypted session
@@ -142,6 +144,7 @@ mail-manager/
 │   ├── cursor.py           which emails are new
 │   ├── archive.py          the saved history (monthly files, periods)
 │   ├── destinations.py     the list of Telegram chats
+│   ├── labels.py           which emails need which MB: labels; apply / clear / status
 │   └── notify/telegram.py  sending to Telegram
 └── tests/                  one small test script per module
 ```
@@ -183,6 +186,7 @@ load session, archive, cursor
   → choose the new inbox emails; fetch their images
   → build threads; mark what you've replied to
   → AI Pass 1: label each new email (with thread context)
+  → open Outlook again briefly: put MB: labels on emails that need them
   → AI Pass 2: write the digest from the labels
   → print, save to the archive, maybe send, maybe advance the cursor
 ```
@@ -1046,6 +1050,104 @@ compose.yaml: restart: unless-stopped   → always on: back after crashes and re
 - **Why build our own image** rather than use Microsoft's Playwright image? Theirs is published per Playwright version, and there isn't one for the 1.64 we use yet. Installing Chromium ourselves with `playwright install --with-deps` always matches the locked version.
 - **Why can't the server log in?** `login` needs a visible browser and you at the keyboard (MFA). So you log in on your PC and copy `data/session.enc` across, with the **same** `SESSION_ENCRYPTION_KEY`. The Telegram alert tells you when it's time to do that again.
 
+### 7.16 `labels.py` and `outlook_writer.py`
+**Job:** show each email's classification **inside Outlook**, as two categories (`MB: Urgent` + `MB: P1`). This is the app's first and only write to your mailbox, so it is narrow, checked, recorded and reversible.
+
+#### What an Outlook category is
+- A category is a **name stored on the email**, on Microsoft's server. That's why it appears on web, desktop and phone.
+- An email can have several. Your mailbox also has a **master category list** (Settings → Categories) that maps each name to a colour.
+- A name that isn't in the list still shows, just without a colour.
+- Changing an email's categories changes nothing else: not the folder, not read/unread, and nobody is notified.
+
+#### Step 0: copy what Outlook does, don't guess
+Outlook's internal API is undocumented, so before writing any code a **probe** opened a visible Outlook, and the user categorised an email and created and deleted a category by hand. The probe recorded only the *structure* of the requests Outlook sent (action names and keys, with values redacted). It found:
+- **The colour list:** `UpdateMasterCategoryList`, with `{Name, Color (a number), Id, LastTimeUsed, KeyboardShortcut}` entries to add and names to remove.
+- **Deleting a category:** also sends `ApplyCategoryOperation` (Action 1), which strips that name from **every** email in one call.
+- **A surprise:** Outlook's right-click "Categorize" doesn't tag the email. It sends `ApplyConversationAction / UpdateAlwaysCategorizeRule`, creating a rule that categorises the **whole conversation, including future replies**. That's not "label this email", so MailBrief deliberately doesn't copy it. It uses the standard per-email `UpdateItem` on the `Categories` field, and a one-email trial (below) confirmed that works.
+
+#### The labels
+```
+labels_for(email):
+    not an inbox email from someone else, or no real category, or only a list preview → []
+    else → ["MB: " + category, "MB: P" + priority]          e.g. ["MB: FYI", "MB: P3"]
+```
+- **Why a prefix?** The prefix is how code tells "ours" from "yours". Every write is checked for it, clearing touches only it, and you can see at a glance which labels came from MailBrief.
+- **Why two labels, not one combined one like "Urgent P1"?** Six categories plus five priorities is 11 names, versus 30 combinations. Filtering works either way: by "all urgent" or by "all P1".
+- **Colours** are Outlook's preset numbers (0 red, 1 orange, 3 yellow, 4 green, 5 teal, 7 blue, 8 purple, 12 grey, 15 dark red), created once and only when missing. If you recolour one in Outlook, MailBrief never overwrites it.
+
+#### Writing one batch (read, merge, write)
+```
+set_labels(wanted = {email id: ["MB: FYI", "MB: P3"]}):
+    for each batch of 20:
+        current ← GetItem(ids, only Categories)          fresh categories + ChangeKey; a missing item → "gone"
+        for each email:
+            new ← (current without any "MB: …") + wanted  your own categories kept, in order
+            new == current → done, no write               (re-running costs reads only)
+        UpdateItem(those that changed: set Categories = new, or delete the field if new is empty)
+        per email: ok / gone / failed
+        a batch that errors (e.g. a 60 s timeout) → only those 20 marked failed; 3 failed batches in a row → stop
+```
+- **Why read first?** You may have added your own categories. Writing `["MB: FYI", "MB: P3"]` blindly would wipe them. Reading also gets the **ChangeKey**, Exchange's version stamp for an email.
+- **Why skip unchanged ones?** It makes every operation idempotent and cheap to repeat. After a timeout, re-running is safe and quick: the second restore of 360 emails took 24 s because most were already right.
+
+#### Remembering what was done
+Each archived email records:
+- `outlook_labels`: what Outlook was given;
+- `labels_cleared`: you removed them;
+- `outlook_gone`: the email no longer exists in the mailbox.
+
+```
+pending(emails) = classified inbox emails where labels_for(e) ≠ e.outlook_labels,
+                  not cleared, not gone
+```
+- **A new email:** it has no `outlook_labels` yet, so it's pending.
+- **A reclassified email:** its labels differ, so it's pending, and its `MB:` labels are **swapped**.
+- **An email you cleared:** it stays cleared until you `apply`.
+- **A label you removed by hand:** the archive still says it was applied, so it isn't re-added. MailBrief respects your edits.
+- **Why store this in the archive?** Because the archive already holds one record per email, encrypted. A second file would have to be kept in sync with it.
+
+One subtle fix made this work: `archive._merge` used to **replace** an email's record wholesale on every run. That would have wiped `outlook_labels` each morning, and every email would have looked pending forever. The merge now carries the label fields across.
+
+#### The guard: `check_request`
+Every request goes through `_service_call`, and `_service_call` calls `check_request(action, body)` **before** anything leaves the PC:
+```
+GetItem, GetAttachment             → allowed (reads)
+UpdateItem                         → only if every change is Set/DeleteItemField on "Categories",
+                                     the Item carries nothing but Categories, and MessageDisposition = SaveOnly
+UpdateMasterCategoryList           → only adding/removing names that start with "MB: "; no other edits
+ApplyCategoryOperation             → only for an "MB: " name
+anything else                      → UnsafeRequest: refused
+```
+- **Why check the body, not just the action name?** `UpdateItem` can change *any* field. It's the same call that marks mail as read, or moves a draft to send. The guard looks inside the request. The tests try sneaking `IsRead` in, both as the field and hidden inside the item, plus "SendAndSaveCopy", and expect a refusal every time.
+- **Why in the shared `_service_call`?** Every caller passes through it, so no future code can forget the check.
+
+#### When it runs
+- **In every `mailbrief run`,** after saving the archive and before the digest, `labels.run_step` labels what's pending, up to 400.
+- It opens Outlook a second time, about 5 s (`open_outlook`, the sign-in half of `read_inbox`, split out for this). The first browser was closed during the AI work, and its token may have aged.
+- It runs even when there's no new mail, so earlier pending labels still get done.
+- **It can never fail the run:** any error is a warning, and the next run retries.
+- **`mailbrief labels apply / clear / status`** do the same on demand. They take the run lock, so they never overlap a run.
+
+#### Clearing
+```
+clear(emails, colours):
+    set_labels(each email → [])                       MB: labels removed, yours kept
+    colours → ApplyCategoryOperation per MB: name     strips them from EVERY email (even untracked)
+              + UpdateMasterCategoryList(remove)      the colours disappear from your list
+    archive: outlook_labels = [], labels_cleared = true
+```
+- **Selection:** `--period`, `--days N` or `--all`. It refuses to guess when none is given.
+- **It asks before acting:** `Go ahead? [y/N]`. With no keyboard it counts as **no**, never as yes.
+- **`--dry-run`** shows the exact emails and labels without touching Outlook.
+
+#### Verified on the real mailbox
+1. **One already-read email:** got `MB: FYI` + `MB: P3`, and the 11 coloured categories were created.
+2. **One unread email:** labelled, and still **unread** afterwards (checked with `GetItem` before and after).
+3. **`clear --all` on those two:** labels gone.
+4. **A normal run:** labelled all 358 pending emails in about 60 s.
+5. **Idempotency and selection:** `labels status` showed 0 pending, and `clear --days 2` then `apply` worked.
+6. **Full reset:** `clear --all --colours` removed 360 emails' labels and all 11 categories. `apply` restored everything.
+
 ---
 
 ## 8. The full run, end to end
@@ -1097,6 +1199,7 @@ Every numbered step also prints a progress line (`[00:17] Loading Focused tab 28
 
 8  archive: prune if configured; save ALL fetched records       ← BEFORE the digest:
                                                                   a period digest reads them back
+   labels: open Outlook again, put MB: labels on pending emails (≤ 400); a failure only warns
 9  if there is a scope:
        emails ← digest_set(scope, targets, cursor)
        digest ← digest(emails, …, scope)                          (spinner: part k/n, merging)
@@ -1150,6 +1253,10 @@ Every numbered step also prints a progress line (`[00:17] Loading Focused tab 28
 | PC asleep/off at the scheduled time | The missed run happens on wake/start, once per scope | A late digest beats a missing one; one covers the gap |
 | Stop requested during a run | The run finishes, then the service exits | Nothing half-done |
 | Service killed hard (End task, power cut) | Next run redoes the work (rarely: one repeated digest) | Atomic writes + cursor-after-delivery |
+| Labelling fails (timeout, login, Outlook error) | Warning; digest, delivery and cursor carry on; retried next run | Labels are a bonus, the digest is the product |
+| One label batch times out | Only those 20 emails are marked failed; the rest continue; 3 failures in a row → stop | Partial progress is kept, and re-running is cheap |
+| An email was deleted or moved before labelling | Marked `outlook_gone`, never retried | It can't be labelled any more |
+| Any non-category write is attempted (a bug) | `check_request` raises before the request leaves | The guarantee lives in code, not in good intentions |
 | Bad `RUN_AT` | `serve` refuses to start, naming the bad entry | A typo must not mean "silently never runs" |
 | Wrong encryption key | Error names the file and the cause | Easier to diagnose than a raw crypto error |
 
@@ -1163,7 +1270,7 @@ Every numbered step also prints a progress line (`[00:17] Loading Focused tab 28
 - **The archive** is encrypted by default. Plain JSON exists only when you ask for it.
 - **The AI key and bot token** come from environment variables and are never printed. The Telegram URL contains the token, so it's never logged.
 - **Prompt injection:** email text sits inside `<email>` delimiters and is marked as data. The classifier has no tools and its output is validated. The digest model never sees bodies.
-- **Read-only:** no code exists to delete, move, send, or mark as read.
+- **Read-only, except labels:** no code exists to delete, move, send, or mark as read. The only write, `MB:` categories, passes `check_request` first: an allowlist of actions, plus a check of each write's contents.
 
 **Where data goes**
 
@@ -1196,6 +1303,7 @@ Each module with real logic has one small test script, `tests/test_<module>.py`:
 | `test_archive` | encryption round-trip, plain JSON, merge without duplicates, month split, time-zone sorting, format switch, migration, wrong key, period boundaries incl. a year rollover, pruning |
 | `test_threads` | reply-tree ordering (the "Ana replies to your reply after Bob" case), depth, `replied` only counting later messages, context lines |
 | `test_progress` | when piped: timestamped step lines, counters only at 25% steps, `working` start and ✓ lines, ✗ on failure, never a `\r` |
+| `test_labels` | label names (and what gets none: sent, other-folder, unclassified, previews); merging keeps your categories and swaps ours; pending/labelled/cleared/gone selection; period and day selection; parsing GetItem/UpdateItem replies incl. "gone"; built requests pass the guard; the guard refuses moves/deletes/sends, an `IsRead` change (as the field or hidden in the item), `SendAndSaveCopy`, empty updates and non-`MB:` category edits; reading the category list from StartupData |
 | `test_service` | every `RUN_AT` form parses (daily, weekdays, weekends, day lists, `day-N`, scopes) and bad ones are rejected; due runs: on time, not early, three days off = one catch-up, latest per scope (daily + weekly + monthly), nothing when done; next run across weekends and months; only `new` commits; the lock is exclusive and released |
 
 **Real-world checks** were also done against your actual inbox during development:
@@ -1213,7 +1321,8 @@ Each module with real logic has one small test script, `tests/test_<module>.py`:
   - `mailbrief stop` during a run let it finish, then stopped;
   - `autostart on` + `schtasks /Run` started it hidden and caught up a missed 07:30 slot;
   - `stop` and `autostart off` cleaned up;
-  - a simulated Ctrl+C stopped an idle service at once.
+  - a simulated Ctrl+C stopped an idle service at once;
+- **labels:** the trials listed in section 7.16, including an unread email staying unread and a full clear-and-restore of 360 emails.
 
 ---
 
@@ -1236,6 +1345,8 @@ Each of these was found by running against real Outlook, and each shaped the cod
 13. **The blank month digest.** The merge call, with thinking on, used its entire token budget reasoning and returned nothing, so the digest printed only its header line. *Lessons:* thinking models can "think out" their budget; check for empty answers, retry differently, and fail loudly rather than show a blank.
 14. **`--backfill --send` refused to advance the cursor.** With no digest to send, "delivered" stayed false. *Lesson:* "nothing to deliver" and "delivery failed" are different states; don't let one boolean stand for both.
 15. **The digest that never arrived.** A long digest silently failed to reach Telegram. The splitter counted Python characters with no margin (Telegram counts UTF-16), cut sections wherever the limit fell, didn't handle flood control, and reported only "HTTP Error 400". *Lessons:* measure limits the way the receiving system measures them, leave a margin, split on meaningful boundaries (sections, then lines), respect `retry_after`, and keep the remote system's error message: it usually tells you the fix.
+16. **The categorize button is a rule.** The probe showed that Outlook's own "Categorize" doesn't label the email: it creates an *always categorise this conversation* rule. Copying the UI blindly would have left server-side rules on hundreds of threads. *Lesson:* record what the system actually does before copying it, and copy the intent ("label this email"), not the button.
+17. **One slow batch lost a whole restore.** Re-labelling 360 emails right after deleting their categories hit a 30 s request timeout. Results were only saved at the very end, so the whole pass counted as failed. *Lessons:* keep partial progress per batch, allow slack on timeouts, and make operations idempotent: the retry finished in 24 s because done emails cost only a read.
 
 ---
 
@@ -1254,7 +1365,7 @@ Each of these was found by running against real Outlook, and each shaped the cod
 - On a server, the Outlook login is **copied from your PC**, and Microsoft may expire logins from datacenter IPs sooner.
 
 **Roadmap** (README §12):
-- **M4:** apply `MB: Urgent`-style categories in Outlook (the first write), plus a Telegram alert when the session expires.
+- **M4 ✅:** `MB: <category>` + `MB: P<priority>` labels in Outlook, coloured, applied every run, easy to clear (section 7.16). The session-expired alert came with M5.
 - **M5 ✅:** `serve` with an extensible schedule, `stop` / `status`, autostart at logon, run locks, logs, the login alert, Docker files (section 7.15).
 - **M6:** optional self-healing browser agent behind a code-enforced blocklist, and a "move to folders" mode.
 - **Later:** WhatsApp/Slack/email delivery, Gmail, Browserless (Docker/cloud), a dashboard, multiple users.
@@ -1287,6 +1398,11 @@ Each of these was found by running against real Outlook, and each shaped the cod
 | **429** | HTTP "Too Many Requests", a rate limit |
 | **Data URL** | An image embedded as text: `data:image/png;base64,…` |
 | **ponytail comment** | A marked, deliberate simplification naming its limit and upgrade path |
+| **Category** | Outlook's label: a name stored on an email (several allowed), shown with a colour |
+| **Master category list** | Your mailbox's list of category names → colours (Settings → Categories) |
+| **UpdateItem** | Exchange call that changes fields of an email; MailBrief may only use it on `Categories` |
+| **ChangeKey** | Exchange's version stamp for an email, returned with its id |
+| **`check_request`** | The guard every Outlook request passes: reads allowed, writes only for `MB:` categories |
 | **Service / daemon** | A program that keeps running in the background (here: `mailbrief serve`) |
 | **Child process** | A separate program started by another; it can crash or be killed without taking the parent down |
 | **Exit code** | The number a program returns when it ends: 0 = fine, anything else = a specific problem |

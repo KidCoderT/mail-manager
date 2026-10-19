@@ -60,10 +60,33 @@ def _write_month(month: str, data: dict, plain: bool) -> Path:
     return path
 
 
+LABEL_KEYS = ("outlook_labels", "labels_cleared", "outlook_gone")  # Outlook-label bookkeeping (labels.py)
+
+
 def _merge(data: dict, new: list[dict]) -> None:
     merged = {m["id"]: m for m in data["emails"]}
-    merged.update({m["id"]: m for m in new})  # a re-run replaces the stored copy, never duplicates
+    for m in new:  # a re-run replaces the stored copy, never duplicates…
+        old = merged.get(m["id"], {})
+        merged[m["id"]] = {**{k: old[k] for k in LABEL_KEYS if k in old}, **m}  # …but keeps what Outlook was given
     data["emails"] = sorted(merged.values(), key=lambda m: datetime.fromisoformat(m["received_at"]))
+
+
+def update_fields(changes: dict[str, dict]) -> int:
+    """Set fields on archived emails: {id: {field: value}}. Each touched month is rewritten in its own format."""
+    left, done = dict(changes), 0
+    for month in months():
+        if not left:
+            break
+        path = next(p for p in (_path(month, False), _path(month, True)) if p.exists())
+        data = _read(path)
+        hit = False
+        for m in data["emails"]:
+            if m["id"] in left:
+                m.update(left.pop(m["id"]))
+                hit, done = True, done + 1
+        if hit:
+            _write_month(month, data, plain=path.suffix == ".json")
+    return done
 
 
 def _migrate() -> None:

@@ -98,6 +98,9 @@ def run(show_all=False, as_json=False, commit=False, send=False, plain=False, ba
             print(f"  {url}", file=log)
     if not targets and scope in (None, "new"):
         print("No new emails, so no digest.", file=log)
+        from mailbrief import labels
+
+        labels.run_step(log)  # labels still pending from earlier runs
         return 0
 
     # Threads: earlier messages from the archive plus everything fetched now (fresh copies win).
@@ -162,6 +165,10 @@ def run(show_all=False, as_json=False, commit=False, send=False, plain=False, ba
         saved_msg = f"Saved ({kind}): {names} in {archive.ARCHIVE_DIR}  (view with `mailbrief emails`)"
     except Exception as e:  # noqa: BLE001
         saved_msg = f"warning: archive not saved ({type(e).__name__}: {e})"
+    else:
+        from mailbrief import labels
+
+        labels.run_step(log)  # MB: labels in Outlook for whatever is pending; never fails the run
 
     text, t_digest = None, 0.0
     if scope:
@@ -360,6 +367,74 @@ def show_emails(period, day, search, show, thread, digest, export, send=False) -
     return 0
 
 
+def labels_command(args) -> int:
+    """`mailbrief labels status|apply|clear`: MailBrief's MB: categories in Outlook."""
+    from mailbrief import archive, labels
+
+    tz = _tz()
+    today = datetime.now(tz).date()
+    try:
+        emails = archive.load()[0]
+    except archive.ArchiveError as e:
+        print(e)
+        return 1
+
+    if args.action == "status":
+        print(f"Outlook labels: {'on' if labels.enabled() else 'off (OUTLOOK_LABELS=off)'}")
+        print(f"{'':12} {'labelled':>9} {'pending':>8} {'cleared':>8}")
+        for name in archive.PERIODS:
+            group = [e for e in emails if archive.in_period(e, name, today, tz)]
+            print(f"{name:12} {len(labels.labelled(group)):9} {len(labels.pending(group)):8} "
+                  f"{sum(bool(e.get('labels_cleared')) for e in group):8}")
+        print(f"{'all':12} {len(labels.labelled(emails)):9} {len(labels.pending(emails)):8} "
+              f"{sum(bool(e.get('labels_cleared')) for e in emails):8}")
+        return 0
+
+    if args.action == "clear" and not (args.period or args.days or args.all):
+        print("Say what to clear: --period this-month | --days 30 | --all")
+        return 2
+    chosen = labels.select(emails, args.period, args.days, today, tz)
+    if args.action == "apply":
+        targets = labels.pending(chosen, include_cleared=True)[: args.limit or None]
+        verb = "Label"
+    else:
+        targets = labels.labelled(chosen)[: args.limit or None]
+        verb = "Remove MailBrief labels from"
+    print(f"{verb} {len(targets)} email(s)" + (" and delete the MB: categories from your list" if getattr(args, "colours", False) else "") + ".")
+    if args.dry_run or len(targets) <= 5:
+        for e in targets[:20]:
+            shown = labels.labels_for(e) if args.action == "apply" else e.get("outlook_labels")
+            print(f"  {e['received_at'].astimezone(tz):%d %b %H:%M}  {', '.join(shown)}  {e['subject'][:60]}")
+    if args.dry_run:
+        print("Dry run: Outlook not touched.")
+        return 0
+    if not targets and not getattr(args, "colours", False):
+        print("Nothing to do.")
+        return 0
+    if args.action == "clear" and not args.yes:
+        try:
+            answer = input("Go ahead? [y/N] ") if sys.stdin.isatty() else ""
+        except EOFError:  # no keyboard (piped, scheduled): never assume yes
+            answer = ""
+        if answer.strip().lower() != "y":
+            print("\nNothing changed (answer y, or add --yes).")
+            return 1
+    from mailbrief.service import Busy, lock
+
+    try:
+        with lock("run"):  # never at the same time as a run
+            print(labels.apply(targets) if args.action == "apply" else labels.clear(targets, args.colours))
+    except Busy:
+        print("A MailBrief run is in progress; try again when it finishes.")
+        return 3
+    except labels.LoginNeeded as e:
+        print(f"Can't open Outlook: {e}")
+        return 2
+    if args.action == "clear" and args.all and labels.enabled():
+        print("New emails will still be labelled. To stop that too, put OUTLOOK_LABELS=off in .env.")
+    return 0
+
+
 def add_destination(type_: str, chat_id: str | None) -> int:
     from mailbrief import destinations
     from mailbrief.notify import telegram
@@ -422,6 +497,21 @@ def main() -> None:
     dest_p = sub.add_parser("add-destination", help="add where digests are sent (local setup only)")
     dest_p.add_argument("type", choices=["telegram"])
     dest_p.add_argument("--chat-id", help="skip the lookup and add this chat id directly")
+    lab_p = sub.add_parser("labels", help="MailBrief's MB: labels (categories) in Outlook: status, apply, clear")
+    lab_sub = lab_p.add_subparsers(dest="action", required=True)
+    lab_sub.add_parser("status", help="labelled / pending / cleared emails per period")
+    for name, text in (("apply", "label now (pending emails; also re-labels cleared ones)"),
+                       ("clear", "remove MB: labels (your own categories stay)")):
+        a = lab_sub.add_parser(name, help=text)
+        a.add_argument("--period", choices=["this-week", "this-month", "last-month", "older"])
+        a.add_argument("--days", type=int, metavar="N", help="emails from the last N days")
+        a.add_argument("--limit", type=int, metavar="N", help="at most N emails (newest first)")
+        a.add_argument("--dry-run", action="store_true", help="show what would change; don't touch Outlook")
+        if name == "clear":
+            a.add_argument("--all", action="store_true", help="every email MailBrief labelled")
+            a.add_argument("--colours", action="store_true",
+                           help="also delete the MB: categories from your category list (removes them from every email)")
+            a.add_argument("--yes", action="store_true", help="don't ask for confirmation")
     serve_p = sub.add_parser("serve", help="run forever, firing runs on the RUN_AT schedule (Ctrl+C or `stop` to end)")
     serve_p.add_argument("--at", metavar="SCHEDULE", help='e.g. "daily 07:30; sun 20:00 this-week" (default: RUN_AT)')
     sub.add_parser("stop", help="ask a running `serve` to stop (it finishes a run in progress first)")
@@ -442,6 +532,8 @@ def main() -> None:
             print("--send works with --digest (it resends the latest saved digest).")
             sys.exit(2)
         sys.exit(show_emails(args.period, args.day, args.search, args.show, args.thread, args.digest, args.export, args.send))
+    if args.command == "labels":
+        sys.exit(labels_command(args))
     if args.command in ("serve", "stop", "status", "autostart"):
         from mailbrief import service
 

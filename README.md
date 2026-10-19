@@ -183,17 +183,18 @@ These were picked by testing every candidate on the endpoint with made-up emails
 
 **Privacy:** the AI provider must not retain or train on data. Send only the fields needed and strip signatures and long quoted threads.
 
-### 3.4 Sorter
-Writes results back to Outlook **through the UI only**.
-
-| Mode | Action | Risk |
-|---|---|---|
-| `categorize` (default) | Right-click → Categorize → `MB: Urgent`, etc. | Lowest; nothing moves |
-| `move` | Right-click → Move → target folder | Medium; email leaves inbox |
-
-- Categories and folders are prefixed (`MB: …`) so they're clearly the app's.
-- Missing categories or folders are created on first run.
-- **No delete action exists in the code.** There is no code path to the Delete button.
+### 3.4 Sorter: Outlook labels ✅ (`labels.py`, `browser/outlook_writer.py`)
+Each inbox email gets **two Outlook categories**: `MB: <category>` + `MB: P<priority>` (e.g. `MB: Urgent` + `MB: P1`). They're coloured, and visible and filterable on web, desktop and phone.
+- **How it writes:** through Outlook's own JSON calls, not by clicking. The formats were captured from Outlook itself (a probe recorded the request structure while categorising by hand).
+  - Per email: `UpdateItem`, setting **only** `Categories`, after reading the current categories. The email's own non-MB categories are kept.
+  - Colours: `UpdateMasterCategoryList`, once.
+  - Full reset: `ApplyCategoryOperation`.
+- **Code-enforced guard** (`check_request`): every Outlook request is checked before it leaves. Reads are allowed. Writes may only set or delete Categories, or add or remove `MB: ` categories. Move, delete, send, mark-read and rules are refused.
+- **Not copied:** Outlook's own right-click "Categorize" creates an *always categorise this conversation* rule. MailBrief deliberately doesn't use that.
+- **Every run labels what's pending:** new or reclassified emails, up to 400 per run. The archive remembers what each email was given (`outlook_labels`).
+- **Easy to undo:** `mailbrief labels clear --period … | --days N | --all [--colours]`, and `labels apply` to bring them back. See [commands.md §5](commands.md#5-mailbrief-labels).
+- **Verified on the real mailbox:** an unread email stayed unread. 360 emails were labelled, cleared (including the categories) and re-labelled.
+- A "move to folders" mode is left for M6. **No delete action exists in the code.**
 
 ### 3.5 AI Fallback Agent (optional, off by default)
 Enabled with `FALLBACK_AGENT=on`. When a scripted step fails (selector not found or timeout):
@@ -248,7 +249,7 @@ Adding a channel means writing one `send_<channel>(target, digest)` function and
 - **Logs and status:** monthly logs in `data/logs/` (no email content: `run --quiet`); `mailbrief status`.
 - **Expired login:** a Telegram alert, once a day.
 
-Commands and the full schedule format: [commands.md §6](commands.md#6-running-automatically).
+Commands and the full schedule format: [commands.md §7](commands.md#7-running-automatically).
 
 ---
 
@@ -376,9 +377,10 @@ TELEGRAM_BOT_TOKEN=...
 SESSION_ENCRYPTION_KEY=...
 DATABASE_URL=sqlite:///data/mailbrief.db
 DEFAULT_TIMEZONE=Asia/Singapore
-# When `mailbrief serve` runs: "<days> <HH:MM> [scope]; …" e.g. "daily 07:30; sun 20:00 this-week" (see commands.md §6)
+# When `mailbrief serve` runs: "<days> <HH:MM> [scope]; …" e.g. "daily 07:30; sun 20:00 this-week" (see commands.md §7)
 RUN_AT=daily 07:30
-SORT_MODE=categorize
+# MB: labels (categories) on your emails in Outlook: on | off (commands.md §5)
+OUTLOOK_LABELS=on
 RESTORE_UNREAD=true             # DOM fallback only
 ARCHIVE_DAYS=0                  # 0 = keep saved emails forever; N = drop months older than N days
 ```
@@ -420,6 +422,7 @@ ARCHIVE_DAYS=0                  # 0 = keep saved emails forever; N = drop months
 - **Browserless cloud sends work data to a third party** (US servers). Get employer/IT approval and a data-processing agreement first. Logging in locally and then uploading the session does **not** avoid this, because the cookies still go to the cloud.
 - **Email content is untrusted.** Models that read it have no tools. The fallback agent never runs with an email body open, and its actions pass through a code-enforced blocklist (§3.5).
 - **Telegram bot is send-only and locked down** (§3.6). Only chat IDs added via the local CLI receive digests.
+- **The only change MailBrief makes in Outlook is its own `MB:` categories** (§3.4), enforced by `check_request` before any request leaves the machine.
 - Email content is saved only in the local archive: encrypted by default and kept until you set `ARCHIVE_DAYS`. The encryption protects copies of `data/` (sync, backups, indexers, an accidental commit). It doesn't protect against someone logged into your Windows account, who also has `.env`.
 - The AI provider is configured for zero retention.
 - Check your employer's acceptable-use policy before automating a work account.
@@ -443,7 +446,7 @@ ARCHIVE_DAYS=0                  # 0 = keep saved emails forever; N = drop months
 - `.env` is passed in at runtime, and `data/` is a volume. Neither is baked into the image.
 - Log in on your PC, then copy `data/session.enc` across (with the same `SESSION_ENCRYPTION_KEY`).
 
-Steps: [commands.md §6 "Hosting"](commands.md#6-running-automatically). Before hosting **for other people**, see [hosting-checklist.md](hosting-checklist.md).
+Steps: [commands.md §7 "Hosting"](commands.md#7-running-automatically). Before hosting **for other people**, see [hosting-checklist.md](hosting-checklist.md).
 
 ---
 
@@ -486,7 +489,7 @@ Steps: [commands.md §6 "Hosting"](commands.md#6-running-automatically). Before 
 | **M1** ✅ | `login_once` + headless session reuse (local Chromium); print today's inbox subjects from network capture |
 | **M2** ✅ | Full email extraction to JSON with cursor/dedupe; list-preview fallback (DOM fallback deferred) |
 | **M3** ✅ | Test the work AI model on real emails; classification (text + images) + digest via `AI_BASE_URL`; send to one Telegram chat |
-| **M4** | Sorter (categorize mode) + re-login alert |
+| **M4** ✅ | Outlook labels: `MB: <category>` + `MB: P<priority>`, coloured, applied every run, `labels status/apply/clear`, code-enforced write guard. (Re-login alert done in M5.) |
 | **M5** ✅ | Scheduler (`serve`, extensible `RUN_AT`, catch-up, retries), `stop` / `status`, Windows autostart, run lock, run logs, login-expired Telegram alert, Docker hosting files. (CLI-only destinations, multiple destinations already done; bot lockdown = `/setjoingroups` in @BotFather) |
 | **M6** | Optional AI fallback agent behind `guard.py`, failure screenshots, move mode |
 | **Later** | Browserless (Docker, then cloud), WhatsApp/Slack/Email/Teams adapters, Gmail support, web dashboard, multi-user |

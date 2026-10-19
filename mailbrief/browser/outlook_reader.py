@@ -5,6 +5,7 @@ from urllib.parse import unquote, urlparse
 
 from mailbrief import progress
 from mailbrief.browser.owa_network import (
+    check_request,
     find_user_email,
     getitem_body,
     parse_items,
@@ -90,14 +91,11 @@ def _load_view(page, responses: list, view, max_scrolls: int) -> list:
     return payloads
 
 
-def read_inbox(page, timeout_s: int = 60, max_scrolls: int = 300) -> dict:
-    """Open the inbox, load every conversation in Focused and Other, return what Outlook's network calls revealed.
-
-    Returns {"expired", "messages", "total", "urls", "auth"}; "auth" is in-memory replay state for fetch_emails.
-    """
-    responses, auth, startup_responses = [], {}, []  # responses: (view, response)
-    page.on("response", lambda r: responses.append((_view_of(r.request), r)) if _is_outlook_json(r) else None)
-    # StartupData is JSON served as application/x-javascript, so the JSON filter above misses it.
+def open_outlook(page, timeout_s: int = 60) -> dict:
+    """Open Outlook and wait until signed in. Returns {"expired", "auth", "startup"}: auth is the in-memory replay
+    state for _service_call, startup the parsed StartupData payloads (your address, your category list)."""
+    auth, startup_responses = {}, []
+    # StartupData is JSON served as application/x-javascript, so a JSON content-type filter would miss it.
     page.on("response", lambda r: startup_responses.append(r) if "startupdata" in r.url.lower() else None)
     page.on("request", lambda r: _track_auth(auth, r))
     progress.step("Opening Outlook…")
@@ -107,12 +105,33 @@ def read_inbox(page, timeout_s: int = 60, max_scrolls: int = 300) -> dict:
     for _ in range(timeout_s * 2):
         if (urlparse(page.url).hostname or "") in LOGIN_HOSTS:
             progress.step("Session expired (redirected to the Microsoft login page)")
-            return {"expired": True, "messages": [], "total": None, "urls": [], "auth": auth}
+            return {"expired": True, "auth": auth, "startup": []}
         if page.locator(MESSAGE_ROW).count():
             break
         page.wait_for_timeout(500)
-    progress.step("Signed in; loading the inbox list…")
-    page.wait_for_timeout(3000)  # let the list's follow-up requests finish
+    progress.step("Signed in")
+    page.wait_for_timeout(3000)  # let the list's follow-up requests finish (and auth be captured)
+    startup = []
+    for r in startup_responses:
+        try:
+            startup.append(r.json())
+        except Exception:
+            pass
+    return {"expired": False, "auth": auth, "startup": startup}
+
+
+def read_inbox(page, timeout_s: int = 60, max_scrolls: int = 300) -> dict:
+    """Open the inbox, load every conversation in Focused and Other, return what Outlook's network calls revealed.
+
+    Returns {"expired", "messages", "total", "urls", "auth", "me"}; "auth" is in-memory replay state for fetch_emails.
+    """
+    responses = []  # (view, response)
+    page.on("response", lambda r: responses.append((_view_of(r.request), r)) if _is_outlook_json(r) else None)
+    opened = open_outlook(page, timeout_s)
+    auth = opened["auth"]
+    if opened["expired"]:
+        return {"expired": True, "messages": [], "total": None, "urls": [], "auth": auth}
+    progress.step("Loading the inbox list…")
 
     # With Focused Inbox on, the list only shows one tab; load "Other" too, then switch back.
     first_view = next((v for v, _ in responses if v is not None), None)
@@ -126,12 +145,7 @@ def read_inbox(page, timeout_s: int = 60, max_scrolls: int = 300) -> dict:
 
     totals = [view_total(v) for v in views]
     urls = sorted({urlparse(r.url).path for _, r in responses})  # paths only: no tokens in query strings
-    startup = []
-    for r in startup_responses:
-        try:
-            startup.append(r.json())
-        except Exception:
-            pass
+    startup = opened["startup"]
     return {
         "expired": False,
         "messages": parse_messages([p for v in views for p in v]),
@@ -189,16 +203,22 @@ def fetch_images(page, auth: dict, email: dict) -> list[str]:
 
 
 def _service_call(page, auth: dict, action: str, make_body):
-    """POST an action to Outlook's service.svc as the page itself would. None if no auth was captured."""
+    """POST an action to Outlook's service.svc as the page itself would. None if no auth was captured.
+
+    Every call passes check_request first: reads are free, writes may only touch MailBrief's categories.
+    """
     resp = None
     for _ in range(2):  # retry once: a 401 usually means the token refreshed after we copied it
         if not auth:
             return None
+        body = make_body(auth["header"])
+        check_request(action, body)  # raises before anything leaves this machine
         url = urlparse(auth["url"])._replace(query=f"action={action}&app=Mail").geturl()
         resp = page.request.post(
             url,
             headers={**auth["headers"], "action": action, "content-type": "application/json; charset=utf-8"},
-            data=json.dumps(make_body(auth["header"])),
+            data=json.dumps(body),
+            timeout=60_000,  # a 20-email update can take Outlook a while
         )
         if resp.status != 401:
             break

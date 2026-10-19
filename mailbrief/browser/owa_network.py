@@ -238,3 +238,148 @@ def preview_records(conversations: list[dict]) -> list[dict]:
         "in_inbox": True,
         "from_me": False,
     } for c in conversations]
+
+
+# ── Categories (Outlook "labels") ─────────────────────────────────────────────────────────────────
+# The only writes MailBrief ever makes. Shapes copied from what Outlook itself sends (UpdateMasterCategoryList,
+# ApplyCategoryOperation) plus the standard per-email UpdateItem. check_request() is the code-enforced guard.
+
+PREFIX = "MB: "  # every category MailBrief creates or removes starts with this
+READ_ACTIONS = {"GetItem", "GetAttachment"}
+WRITE_ACTIONS = {"UpdateItem", "UpdateMasterCategoryList", "ApplyCategoryOperation"}
+
+
+class UnsafeRequest(Exception):
+    pass
+
+
+def categories_getitem_body(header: dict, ids: list[str]) -> dict:
+    """Read-only GetItem for just the categories (the reply's ItemId also carries the ChangeKey)."""
+    return {
+        "__type": "GetItemJsonRequest:#Exchange",
+        "Header": header,
+        "Body": {
+            "__type": "GetItemRequest:#Exchange",
+            "ItemShape": {"__type": "ItemResponseShape:#Exchange", "BaseShape": "IdOnly",
+                          "AdditionalProperties": [{"__type": "PropertyUri:#Exchange", "FieldURI": "Categories"}]},
+            "ItemIds": [{"__type": "ItemId:#Exchange", "Id": i} for i in ids],
+        },
+    }
+
+
+def parse_categories(response: dict, ids: list[str]) -> dict[str, tuple[str, list[str]] | None]:
+    """{id: (change_key, categories)} in request order; None for an item that's gone (deleted or moved away)."""
+    out: dict[str, tuple[str, list[str]] | None] = {}
+    for i, msg in zip(ids, (response.get("Body") or {}).get("ResponseMessages", {}).get("Items", [])):
+        items = msg.get("Items") or []
+        if msg.get("ResponseClass") != "Success" or not items:
+            out[i] = None
+            continue
+        item_id = items[0].get("ItemId") or {}
+        out[i] = (item_id.get("ChangeKey") or "", list(items[0].get("Categories") or []))
+    return out
+
+
+def merge_categories(current: list[str], wanted: list[str]) -> list[str]:
+    """Your own categories kept in their order; every MailBrief one replaced by `wanted`."""
+    return [c for c in current if not c.startswith(PREFIX)] + list(wanted)
+
+
+def update_categories_body(header: dict, changes: list[tuple[str, str, list[str]]]) -> dict:
+    """UpdateItem that sets (or, when empty, deletes) ONLY the Categories field of each (id, change_key, categories)."""
+    def update(categories):
+        path = {"__type": "PropertyUri:#Exchange", "FieldURI": "Categories"}
+        if not categories:
+            return {"__type": "DeleteItemField:#Exchange", "Path": path}
+        return {"__type": "SetItemField:#Exchange", "Path": path, "Item": {"__type": "Message:#Exchange", "Categories": categories}}
+
+    return {
+        "__type": "UpdateItemJsonRequest:#Exchange",
+        "Header": header,
+        "Body": {
+            "__type": "UpdateItemRequest:#Exchange",
+            "ConflictResolution": "AlwaysOverwrite",
+            "MessageDisposition": "SaveOnly",
+            "SuppressReadReceipts": True,
+            "ItemChanges": [{
+                "__type": "ItemChange:#Exchange",
+                "ItemId": {"__type": "ItemId:#Exchange", "Id": i, **({"ChangeKey": ck} if ck else {})},
+                "Updates": [update(cats)],
+            } for i, ck, cats in changes],
+        },
+    }
+
+
+def parse_update(response: dict, ids: list[str]) -> dict[str, str]:
+    """{id: "ok" | "gone" | "failed: <code>"} for an UpdateItem reply, in request order."""
+    out = {}
+    for i, msg in zip(ids, (response.get("Body") or {}).get("ResponseMessages", {}).get("Items", [])):
+        code = msg.get("ResponseCode") or "?"
+        out[i] = "ok" if msg.get("ResponseClass") == "Success" else "gone" if code == "ErrorItemNotFound" else f"failed: {code}"
+    return out
+
+
+def master_list_body(add: list[tuple[str, int]] = (), remove: list[str] = (), now: str = "", new_id=None) -> dict:
+    """Outlook's own UpdateMasterCategoryList request: add (name, colour) pairs and/or remove names."""
+    import uuid
+
+    new_id = new_id or (lambda: str(uuid.uuid4()))
+    return {"request": {
+        "__type": "UpdateMasterCategoryListRequest:#Exchange",
+        "AddCategoryList": [{"Name": n, "Color": c, "Id": new_id(), "LastTimeUsed": now, "KeyboardShortcut": 0}
+                            for n, c in add],
+        "RemoveCategoryList": list(remove),
+        "ChangeCategoryColorList": [],
+        "UpdateCategoryLastTimeUsedList": [],
+        "ChangeCategoryKeyboardShortcutList": [],
+    }}
+
+
+def remove_everywhere_body(name: str) -> dict:
+    """Outlook's ApplyCategoryOperation, Action 1: take this category off every email in the mailbox."""
+    return {"request": {"__type": "ApplyCategoryOperationRequest:#Exchange",
+                        "categoryOperation": {"Action": 1, "CategoryName": name}}}
+
+
+def master_categories(payloads: list) -> dict[str, int] | None:
+    """{name: colour} from StartupData's owaUserConfig.MasterCategoryList.MasterList; None if not found."""
+    stack = list(payloads)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            mcl = node.get("MasterCategoryList")
+            if isinstance(mcl, dict) and isinstance(mcl.get("MasterList"), list):
+                return {c.get("Name"): c.get("Color") for c in mcl["MasterList"] if isinstance(c, dict)}
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+    return None
+
+
+def check_request(action: str, body: dict) -> None:
+    """The guard: every service.svc call passes here first. Reads are free; writes may touch categories only."""
+    if action in READ_ACTIONS:
+        return
+    if action not in WRITE_ACTIONS:
+        raise UnsafeRequest(f"{action} is not an allowed Outlook action")
+    if action == "UpdateItem":
+        b = body.get("Body") or {}
+        changes = b.get("ItemChanges") or []
+        if b.get("MessageDisposition") != "SaveOnly" or not changes:
+            raise UnsafeRequest("UpdateItem must be SaveOnly with at least one change")
+        for ch in changes:
+            for u in ch.get("Updates") or [None]:
+                if not isinstance(u, dict) or u.get("__type") not in ("SetItemField:#Exchange", "DeleteItemField:#Exchange") \
+                        or (u.get("Path") or {}).get("FieldURI") != "Categories" \
+                        or set((u.get("Item") or {}).keys()) - {"__type", "Categories"}:
+                    raise UnsafeRequest("UpdateItem may only set or delete the Categories field")
+    elif action == "UpdateMasterCategoryList":
+        r = body.get("request") or {}
+        names = [c.get("Name", "") for c in r.get("AddCategoryList") or []] + list(r.get("RemoveCategoryList") or [])
+        if any(r.get(k) for k in ("ChangeCategoryColorList", "UpdateCategoryLastTimeUsedList", "ChangeCategoryKeyboardShortcutList")) \
+                or not names or not all(str(n).startswith(PREFIX) for n in names):
+            raise UnsafeRequest("the category list may only gain or lose MailBrief (\"MB: \") categories")
+    elif action == "ApplyCategoryOperation":
+        name = ((body.get("request") or {}).get("categoryOperation") or {}).get("CategoryName", "")
+        if not str(name).startswith(PREFIX):
+            raise UnsafeRequest("only MailBrief (\"MB: \") categories can be removed everywhere")

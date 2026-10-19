@@ -8,13 +8,14 @@ Run all commands from the project folder (`mail-manager/`). They are run with **
 - [2. `mailbrief login`](#2-mailbrief-login)
 - [3. `mailbrief run`](#3-mailbrief-run)
 - [4. `mailbrief emails`](#4-mailbrief-emails)
-- [5. `mailbrief add-destination`](#5-mailbrief-add-destination)
-- [6. Running automatically: `serve`, `stop`, `status`, `autostart`, hosting](#6-running-automatically)
-- [7. Developer commands (tests, checks)](#7-developer-commands)
-- [8. Configuration (`.env`) that changes command behaviour](#8-configuration-env)
-- [9. Files the commands create](#9-files-the-commands-create)
-- [10. Recipes: common workflows](#10-recipes)
-- [11. Exit codes at a glance](#11-exit-codes-at-a-glance)
+- [5. `mailbrief labels`: MB: labels in Outlook](#5-mailbrief-labels)
+- [6. `mailbrief add-destination`](#6-mailbrief-add-destination)
+- [7. Running automatically: `serve`, `stop`, `status`, `autostart`, hosting](#7-running-automatically)
+- [8. Developer commands (tests, checks)](#8-developer-commands)
+- [9. Configuration (`.env`) that changes command behaviour](#9-configuration-env)
+- [10. Files the commands create](#10-files-the-commands-create)
+- [11. Recipes: common workflows](#11-recipes)
+- [12. Exit codes at a glance](#12-exit-codes-at-a-glance)
 
 ---
 
@@ -83,9 +84,10 @@ uv run mailbrief run [--all] [--backfill] [--digest SCOPE] [--json] [--send] [--
 - classifies it with the AI, using thread context;
 - writes a morning **digest**;
 - prints everything;
-- saves the emails and digest to the encrypted archive.
+- saves the emails and digest to the encrypted archive;
+- puts **MB: labels** (categories) on the emails in Outlook (section 5).
 
-It **never** deletes, moves, sends or marks anything as read. Every Outlook call it makes is read-only.
+It **never** deletes, moves, sends or marks anything as read. The only thing it ever changes in Outlook is MailBrief's own `MB:` categories, and a code-level guard refuses any other kind of write.
 
 ### Step by step (default run)
 1. **Loads your session** from `data/session.enc`. If it's missing: *"No saved session. Run `mailbrief login` first."* (exit 2).
@@ -106,16 +108,18 @@ It **never** deletes, moves, sends or marks anything as read. Every Outlook call
     - text-only emails go to `AI_CLASSIFIER_MODEL` (qwen3.6:35b);
     - emails with images go to `AI_VISION_MODEL` (qwen3.8:27b).
 12. **Saves** all fetched messages with their classifications to `data/archive/YYYY-MM.enc`. This happens *before* the digest, because a period digest reads them back from the archive.
-13. **Writes the digest** for the chosen scope (default: the new emails) with `AI_DIGEST_MODEL` (qwen3.8:27b), from the classifications only, never from email bodies. The digest is saved to the archive too, with its scope.
-14. **Prints** one line per email (`[Category/priority] date sender — subject ✓ replied`), then the digest, then timings and where it saved.
-15. With `--send`, delivers the digest. With `--commit`, advances the cursor.
+13. **Labels emails in Outlook** (unless `OUTLOOK_LABELS=off`): every archived inbox email whose `MB:` labels aren't what they should be, up to 400 per run. On the first run that's your whole archive; after that, just the new ones. A failure here only prints a warning. Details: section 5.
+14. **Writes the digest** for the chosen scope (default: the new emails) with `AI_DIGEST_MODEL` (qwen3.8:27b), from the classifications only, never from email bodies. The digest is saved to the archive too, with its scope.
+15. **Prints** one line per email (`[Category/priority] date sender — subject ✓ replied`), then the digest, then timings and where it saved.
+16. With `--send`, delivers the digest. With `--commit`, advances the cursor.
 
 ### Progress output (what you see while it runs)
 Every phase announces itself on **stderr**, so it never mixes into `--json` output:
 ```
 [00:00] Loading saved emails…
 [00:04] Opening Outlook…
-[00:05] Signed in; loading the inbox list…
+[00:04] Signed in
+[00:07] Loading the inbox list…
 [00:17] Loading Focused tab 288/288          ← counts up live as Outlook sends pages
 [00:20] Loading Other tab 57/57
 [00:50] Fetching full text 366/366           ← GetItem batches of 20
@@ -123,6 +127,8 @@ Every phase announces itself on **stderr**, so it never mixes into `--json` outp
 [00:52] Classifying 9 emails with the AI…
 [00:58] Classifying 9/9
 [00:58] Saving to the archive…
+[00:59] Labelling 9 emails in Outlook…         ← opens Outlook again briefly (no scrolling)
+[01:07] Labelling in Outlook 9/9
 |  Writing the new digest of 9 emails… 23s  ← spinner + seconds; "(part 3/6)" / "(merging 6 parts)" for big digests
 [01:30] ✓ Writing the new digest of 9 emails (32s)
 ```
@@ -325,7 +331,95 @@ uv run mailbrief emails --search fee --thread 2  # read the whole conversation
 
 ---
 
-## 5. `mailbrief add-destination`
+## 5. `mailbrief labels`
+
+MailBrief puts its classification **on the emails in Outlook**, as Outlook *categories*:
+
+```
+Prof Tan   Submit form by Fri    [MB: Urgent] [MB: P1]
+NUS News   Weekly roundup        [MB: Newsletter] [MB: P5]
+Ana        Lunch tomorrow?       [MB: Needs Reply] [MB: P2]
+```
+Each inbox email gets **two labels**: its category and its priority.
+
+| Category label | Colour | Priority label | Colour |
+|---|---|---|---|
+| `MB: Urgent` | red | `MB: P1` | dark red |
+| `MB: Needs Reply` | orange | `MB: P2` | orange |
+| `MB: Meetings` | purple | `MB: P3` | yellow |
+| `MB: FYI` | blue | `MB: P4` | teal |
+| `MB: Newsletter` | green | `MB: P5` | grey |
+| `MB: Low Priority` | grey | | |
+
+- **Where they show:** Outlook on the web, desktop and phone, because categories live on the server.
+- **Filtering:** search `category:"MB: Urgent"`, or Filter → Categories.
+- **Colours:** the 11 categories are created once in your category list (Settings → Mail → Categories). Recolour or rename them there if you like; MailBrief never changes an existing one.
+- **Your own categories are never touched.** MailBrief reads each email's categories first and swaps only the `MB:` ones.
+- **Only these emails get labels:** inbox emails from other people with a real classification. Not your sent mail, other-folder copies, `Unclassified` emails, or list-preview-only records.
+- **Nothing else changes:** read/unread state, folder and flags stay as they were. The sender isn't notified (categories are private to your mailbox).
+
+### When labels are applied
+**Automatically, in every `mailbrief run`** (and so in every scheduled run):
+- It labels every archived email whose labels aren't what they should be, up to 400 per run. The first run did your whole archive (360 emails in about a minute).
+- If an email is **reclassified**, its `MB:` labels are swapped, never added to.
+- If you **remove a label by hand** in Outlook, MailBrief doesn't put it back. It remembers what it applied.
+- Turn it off with `OUTLOOK_LABELS=off` in `.env`.
+
+### `mailbrief labels status`
+```
+Outlook labels: on
+              labelled  pending  cleared
+this-week           60        0        0
+this-month         152        0        0
+last-month         205        0        0
+older                3        0        0
+all                360        0        0
+```
+- **labelled:** emails carrying MailBrief labels.
+- **pending:** emails the next run will label.
+- **cleared:** emails you removed labels from. These are left alone until you `apply` again.
+
+### `mailbrief labels clear`: remove labels
+```
+uv run mailbrief labels clear --period last-month    # or this-week, this-month, older
+uv run mailbrief labels clear --days 30              # emails from the last 30 days
+uv run mailbrief labels clear --all                  # every email MailBrief labelled
+uv run mailbrief labels clear --all --colours        # …and delete the 11 MB: categories from your category list
+```
+- **Confirmation:** it shows how many emails (and lists them when there are 5 or fewer), then asks `Go ahead? [y/N]`. Add `--yes` to skip the question.
+- **What it removes:** only `MB:` labels. Your own categories stay.
+- **`--colours`:** also deletes the MB: categories from your list, the same as deleting them in Settings. That strips them from **every** email, even ones MailBrief has lost track of. Use it for a complete reset.
+- **Cleared emails stay cleared:** runs don't re-label them. New mail is still labelled while `OUTLOOK_LABELS=on`, and `clear --all` reminds you of that.
+- **Other options:** `--dry-run` shows what would change without touching Outlook. `--limit N` handles at most N emails, newest first.
+- Clearing 360 emails takes about a minute.
+
+### `mailbrief labels apply`: label now
+```
+uv run mailbrief labels apply                     # everything pending, plus anything you cleared
+uv run mailbrief labels apply --period this-month
+uv run mailbrief labels apply --limit 1 --dry-run # which email would be next, and with which labels
+```
+- Use it after a `clear` to bring labels back, or to label without waiting for a run.
+- It also re-creates the coloured categories if you deleted them.
+
+### Exit codes
+| Code | Meaning |
+|---|---|
+| 0 | Done (or nothing to do, or a dry run) |
+| 1 | You answered no (or there's no terminal and no `--yes`), or the archive can't be read |
+| 2 | `clear` without `--period` / `--days` / `--all`, or Outlook needs `mailbrief login` |
+| 3 | A run is in progress. Labels never change at the same time as a run |
+
+### Safety, in code
+Every request MailBrief sends to Outlook passes one check (`check_request` in `owa_network.py`) before it leaves your PC:
+- **reads** (`GetItem`, `GetAttachment`) are allowed;
+- **`UpdateItem`** is allowed only if every change sets or deletes the **Categories** field and nothing else, with "save only" (no sending);
+- **the category list** may only gain or lose names starting with `MB: `;
+- **anything else** (move, delete, send, mark read, rules…) is refused with an error before any network call.
+
+---
+
+## 6. `mailbrief add-destination`
 
 ```
 uv run mailbrief add-destination telegram [--chat-id ID]
@@ -356,7 +450,7 @@ uv run mailbrief add-destination telegram [--chat-id ID]
 
 ---
 
-## 6. Running automatically
+## 7. Running automatically
 
 Typing `mailbrief run --send --commit` every morning gets old. **`mailbrief serve`** runs forever and fires the runs itself, on a schedule you choose. The same command is used everywhere:
 
@@ -503,7 +597,7 @@ The image needs about 2 GB of disk. Microsoft logins from a datacenter IP may ex
 
 ---
 
-## 7. Developer commands
+## 8. Developer commands
 
 ### Run the tests
 Each test file is a plain script: `assert`s plus a `__main__` runner, with no test framework. It prints `ok` or raises:
@@ -515,6 +609,7 @@ uv run python tests/test_telegram.py      # one message per section, "(cont.)" s
 uv run python tests/test_archive.py       # encryption, merge/dedupe, months, migration, periods, pruning
 uv run python tests/test_threads.py       # reply ordering, depth, "you replied", AI context lines
 uv run python tests/test_progress.py      # progress output when piped: quarter counters, ✓/✗ lines, no "\r"
+uv run python tests/test_labels.py        # label names, keeping your categories, pending/cleared selection, request shapes, the write guard
 uv run python tests/test_service.py       # RUN_AT parsing (and rejecting bad ones), catch-up/due runs, next run, run flags, locks
 ```
 All of them in one go (Git Bash):
@@ -537,7 +632,7 @@ uv add <package>      # updates pyproject.toml + uv.lock and installs it
 
 ---
 
-## 8. Configuration (`.env`)
+## 9. Configuration (`.env`)
 
 | Variable | Default | Affects |
 |---|---|---|
@@ -551,13 +646,14 @@ uv add <package>      # updates pyproject.toml + uv.lock and installs it
 | `DEFAULT_TIMEZONE` | `Asia/Singapore` | Displayed times, `--day`, periods, which month file an email goes in |
 | `ARCHIVE_DAYS` | `0` (forever) | If > 0, `run` deletes month files that ended more than this many days ago |
 | `BROWSER_WS_URL` | *(empty)* | Empty = local Chromium. Set it to connect to a Browserless/CDP browser instead |
-| `RUN_AT` | `daily 07:30` | When `serve` runs, and which digest each time (format in section 6) |
+| `OUTLOOK_LABELS` | `on` | `off` stops `run` from labelling emails in Outlook (section 5) |
+| `RUN_AT` | `daily 07:30` | When `serve` runs, and which digest each time (format in section 7) |
 
-Listed in `.env.example` but **not used by the code yet** (planned for later milestones): `FALLBACK_AGENT`, `DATABASE_URL`, `SORT_MODE`, `RESTORE_UNREAD`.
+Listed in `.env.example` but **not used by the code yet** (planned for later milestones): `FALLBACK_AGENT`, `DATABASE_URL`, `RESTORE_UNREAD` (`SORT_MODE` is replaced by `OUTLOOK_LABELS`; a "move to folders" mode is M6).
 
 ---
 
-## 9. Files the commands create
+## 10. Files the commands create
 
 | File | Created by | Contents | Sensitive? |
 |---|---|---|---|
@@ -566,6 +662,7 @@ Listed in `.env.example` but **not used by the code yet** (planned for later mil
 | `data/archive/YYYY-MM.enc` | every `run` | That month's emails, classifications, digests, encrypted | Yes (encrypted) |
 | `data/archive/YYYY-MM.json` | `run --no-password` | Same, **plain text** | **Yes, unencrypted** |
 | `data/destinations.json` | `add-destination` | Telegram chat IDs | Mildly |
+| `data/archive/…` (fields) | `run`, `labels` | Per email: `outlook_labels` (what Outlook was given), `labels_cleared`, `outlook_gone` | (inside the archive) |
 | `data/schedule.json` | `serve` | Schedule, last scheduled time done, last run result, next run | No |
 | `data/logs/YYYY-MM.log` | `serve` | Timestamped service lines + run progress (no email content: `--quiet`) | No |
 | `data/run.lock`, `data/serve.lock` | `run`, `serve` | Empty; the OS lock on them is what matters | No |
@@ -576,7 +673,7 @@ All of `data/` and `.env` are git-ignored. Exported files elsewhere are **not**.
 
 ---
 
-## 10. Recipes
+## 11. Recipes
 
 **First-time setup**
 ```
@@ -617,7 +714,15 @@ uv run mailbrief status
 Get-Content data\logs\2026-10.log -Tail 40
 ```
 
-**Run it on a server** → section 6, "Hosting".
+**Labels in Outlook: check, remove, bring back**
+```
+uv run mailbrief labels status
+uv run mailbrief labels clear --period last-month      # one month's
+uv run mailbrief labels clear --all --colours          # everything, including the coloured categories
+uv run mailbrief labels apply                          # put them back
+```
+
+**Run it on a server** → section 7, "Hosting".
 
 **"What did that email say?"**
 ```
@@ -655,13 +760,14 @@ uv run mailbrief login
 
 ---
 
-## 11. Exit codes at a glance
+## 12. Exit codes at a glance
 
 | Command | 0 | 1 | 2 |
 |---|---|---|---|
 | `login` | saved | (n/a) | (n/a) |
 | `run` | success | cursor not advanced | no session / session expired (3 = another run in progress, 4 = sent but cursor kept: previews only) |
 | `serve` | stopped normally | (n/a) | bad schedule (3 = already running, 130 = forced stop) |
+| `labels` | done / dry run | answered no / archive unreadable | bad options / login needed (3 = run in progress) |
 | `stop` / `status` | done | (n/a) | (n/a) |
 | `autostart` | done | Task Scheduler refused | not Windows |
 | `emails` | success | bad number / can't decrypt | bad `--day` |

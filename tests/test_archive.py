@@ -120,6 +120,13 @@ def test_prune_by_month():
     assert archive.months() == ["2026-09", "2026-10"]
 
 
+def test_merge_keeps_outlook_label_bookkeeping():
+    at = "2026-10-18T09:00:00+08:00"
+    data = {"emails": [{"id": "a", "received_at": at, "subject": "old", "outlook_labels": ["MB: FYI"], "labels_cleared": False}]}
+    archive._merge(data, [{"id": "a", "received_at": at, "subject": "new"}])  # a later run re-saves the email
+    assert data["emails"] == [{"id": "a", "received_at": at, "subject": "new", "outlook_labels": ["MB: FYI"], "labels_cleared": False}]
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
