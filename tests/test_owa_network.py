@@ -93,6 +93,8 @@ GETITEM = {
                             "IsRead": False,
                             "HasAttachments": True,
                             "Attachments": [{"Name": "q3.xlsx", "Size": 10, "AttachmentId": {"Id": "a"}}],
+                            "ToRecipients": [{"Name": "Me", "EmailAddress": "Me@U.NUS.edu"}],
+                            "CcRecipients": [{"Mailbox": {"Name": "Bob", "EmailAddress": "bob@x.com"}}, {"Name": "no address"}],
                         }
                     ],
                 },
@@ -133,6 +135,7 @@ def test_parse_items():
     assert r["attachment_names"] == ["q3.xlsx"] and r["importance"] == "High" and r["is_read"] is False
     assert r["received_at"].isoformat() == "2026-10-16T00:12:33+00:00" and r["body_source"] == "getitem"
     assert (r["conversation_index"], r["in_reply_to"], r["internet_message_id"]) == ("AQHcPd4R", "<orig@x.com>", "<this@x.com>")
+    assert r["to"] == ["me@u.nus.edu"] and r["cc"] == ["bob@x.com"]  # bare or "Mailbox"-wrapped, lowercased
     assert parse_items({"unexpected": 1}) == []
 
 

@@ -33,28 +33,48 @@ def trim_body(text: str) -> str:
     return (text[: match.start()] if match and match.start() > 0 else text)[:BODY_LIMIT].strip()
 
 
-def validate(data: dict | None) -> dict | None:
+def rules_block(rules: dict | None) -> str:
+    """Your profile and topics for the prompt (M6a); "" without them, so the benchmarked prompt is unchanged."""
+    if not rules or not (rules.get("profile") or rules.get("topics")):
+        return ""
+    lines = []
+    if rules.get("profile"):
+        lines.append(f"About the recipient: {rules['profile']} Use this for priority.")
+    if rules.get("topics"):
+        lines.append("The recipient's topics: " + "; ".join(f"{t['name']} = {t['description']}" for t in rules["topics"]) + ".")
+    lines.append('Also include "tags": the names of the recipient\'s topics that fit this email (or []), and '
+                 '"boost": true only if this email is an opportunity or event that fits the recipient\'s profile, else false.')
+    return "\n" + "\n".join(lines)
+
+
+def validate(data: dict | None, topics: tuple[str, ...] = ()) -> dict | None:
     if not data or data.get("category") not in CATEGORIES:
         return None
     priority = data.get("priority")
     deadline = data.get("deadline")
+    names = {t.lower(): t for t in topics}
+    tags = data.get("tags") if isinstance(data.get("tags"), list) else []
     return {
         "category": data["category"],
         "priority": priority if isinstance(priority, int) and 1 <= priority <= 5 else 3,
         "one_line_summary": str(data.get("one_line_summary") or "").strip(),
         "action_items": [str(a) for a in data.get("action_items") or [] if a],
         "deadline": deadline if isinstance(deadline, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", deadline) else None,
+        # Only topics from your list survive, spelled as you wrote them.
+        "tags": list(dict.fromkeys(names[t.lower()] for t in tags if isinstance(t, str) and t.lower() in names)),
+        "boost": data.get("boost") is True,
     }
 
 
-def classify(email: dict, images: list[str], context: list[str] | None = None) -> dict:
+def classify(email: dict, images: list[str], context: list[str] | None = None, rules: dict | None = None) -> dict:
     """Classification for one EmailRecord; `images` are data URLs, `context` earlier messages in its
-    thread (threads.context_lines). Never raises on bad model output."""
+    thread (threads.context_lines), `rules` your profile and topics (rules.py). Never raises on bad model output."""
+    topics = tuple(t["name"] for t in (rules or {}).get("topics", []))
     thread = ""
     if context:
         thread = "Earlier in this thread (oldest first; 'You' = the recipient):\n" + "\n".join(context) + "\n\n"
     text = (
-        f"{PROMPT}\n\n<email>\n{thread}From: {email['sender_name']} <{email['sender_email']}>\n"
+        f"{PROMPT}{rules_block(rules)}\n\n<email>\n{thread}From: {email['sender_name']} <{email['sender_email']}>\n"
         f"Subject: {email['subject']}\nReceived: {email['received_at']:%Y-%m-%d %H:%M %Z}\n"
         f"Attachments: {', '.join(email['attachment_names']) or 'none'}\n\n{trim_body(email['body_text'])}\n</email>"
     )
@@ -65,8 +85,8 @@ def classify(email: dict, images: list[str], context: list[str] | None = None) -
         model = os.environ.get("AI_CLASSIFIER_MODEL", "qwen3.6:35b")
         content = text
     for _ in range(2):  # one retry on invalid output
-        result = validate(extract_json(complete(model, [{"role": "user", "content": content}])))
+        result = validate(extract_json(complete(model, [{"role": "user", "content": content}])), topics)
         if result:
             return {**result, "model": model}
     return {"category": "Unclassified", "priority": 3, "one_line_summary": email["subject"],
-            "action_items": [], "deadline": None, "model": model}
+            "action_items": [], "deadline": None, "tags": [], "boost": False, "model": model}

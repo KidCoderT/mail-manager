@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from mailbrief.browser.owa_network import (
@@ -13,7 +14,10 @@ from mailbrief.browser.owa_network import (
     remove_everywhere_body,
     update_categories_body,
 )
-from mailbrief.labels import ALL_LABELS, labelled, labels_for, pending, select
+from mailbrief import rules
+from mailbrief.labels import ALL_LABELS, is_custom, labelled, labels_for, pending, select
+
+rules.RULES_PATH = Path(__file__).with_name("no-such-rules.json")  # never read your real data/rules.json
 
 SG = ZoneInfo("Asia/Singapore")
 H = {"RequestServerVersion": "V2018"}
@@ -120,6 +124,21 @@ def test_master_categories_from_startup():
                                                          "DefaultList": []}}}]
     assert master_categories(startup) == {"MB: FYI": 7, "Red": 0}
     assert master_categories([{"other": 1}]) is None
+
+
+def test_your_own_labels():
+    r = rules.validate({"courses": ["CS1101S"], "senders": [{"match": "tan@nus.edu.sg", "label": "Prof Tan", "priority": 1}],
+                        "topics": [{"name": "Networking", "description": "meetups"}]})
+    course = email(1, "FYI", 4, subject="CS1101S: Mission 7")
+    assert labels_for(course, r) == ["MB: FYI", "MB: P4", "MB: CS1101S"]
+    prof = email(2, "Needs Reply", 3, sender_email="tan@nus.edu.sg")
+    assert labels_for(prof, r) == ["MB: Needs Reply", "MB: P1", "MB: Prof Tan"]  # priority floor raises MB: P<n>
+    # A retired rule's label stays as history; one whose rule still exists but no longer matches goes.
+    old = email(3, "FYI", 4, subject="hello", outlook_labels=["MB: FYI", "MB: P4", "MB: MA1521", "MB: CS1101S"])
+    assert labels_for(old, r) == ["MB: FYI", "MB: P4", "MB: MA1521"]
+    assert labels_for(email(4, "Sent", subject="CS1101S"), r) == []  # still only classified inbox mail
+    assert is_custom("MB: CS1101S") and not is_custom("MB: FYI") and not is_custom("Red category")
+    assert pending([email(5)]) and labels_for(email(5)) == ["MB: Urgent", "MB: P1"]  # no rules file: built-ins only
 
 
 if __name__ == "__main__":

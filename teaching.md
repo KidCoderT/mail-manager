@@ -30,6 +30,7 @@ Read it top to bottom once. After that, each section stands on its own as a refe
    - 7.14 [`progress.py`](#714-progresspy): never look stuck
    - 7.15 [`service.py`](#715-servicepy): running on its own (schedule, stop, autostart, hosting)
    - 7.16 [`labels.py` and `outlook_writer.py`](#716-labelspy-and-outlook_writerpy): MB: labels in Outlook, the one write
+   - 7.17 [`rules.py`](#717-rulespy): your own labels (courses, professors, topics, profile)
 8. [The full run, end to end](#8-the-full-run-end-to-end)
 9. [Failure handling: what can go wrong and what happens](#9-failure-handling)
 10. [Security model](#10-security-model)
@@ -119,6 +120,7 @@ mail-manager/
 │   ├── session.enc         your Outlook login, encrypted
 │   ├── cursor.json         "where did we get to?"
 │   ├── destinations.json   where digests go
+│   ├── rules.json          your own labels: profile, courses, senders, topics
 │   ├── archive/YYYY-MM.enc saved emails, one file per month
 │   ├── schedule.json       the service's memory: last scheduled time done, last result, next run
 │   ├── logs/YYYY-MM.log    what the service did (no email content)
@@ -145,6 +147,7 @@ mail-manager/
 │   ├── archive.py          the saved history (monthly files, periods)
 │   ├── destinations.py     the list of Telegram chats
 │   ├── labels.py           which emails need which MB: labels; apply / clear / status
+│   ├── rules.py            your own labels: load/check rules.json, match courses and senders in code
 │   └── notify/telegram.py  sending to Telegram
 └── tests/                  one small test script per module
 ```
@@ -240,8 +243,10 @@ email:
   is_read, importance
   conversation_index   Exchange's thread-tree key (base64)
   in_reply_to, internet_message_id
+  to, cc               lowercased recipient addresses
   in_inbox             is it one of the inbox's item_ids?
   from_me              is the sender your address?
+  direct               are you the ONLY To recipient? (private mail, for --direct sender rules)
   body_source          "getitem" (full text) or "preview" (fallback)
 ```
 Later the run adds `classification`, `replied` and `thread_size`.
@@ -255,6 +260,8 @@ classification:
   one_line_summary
   action_items      list of short strings
   deadline          YYYY-MM-DD or null
+  tags              your topic names that fit (only names from rules.json survive)
+  boost             does it fit your profile as an opportunity/event? (true/false)
   model             which model produced it
 ```
 
@@ -1148,6 +1155,55 @@ clear(emails, colours):
 5. **Idempotency and selection:** `labels status` showed 0 pending, and `clear --days 2` then `apply` worked.
 6. **Full reset:** `clear --all --colours` removed 360 emails' labels and all 11 categories. `apply` restored everything.
 
+### 7.17 `rules.py`
+Your own labels, beside the built-in category and priority: `MB: CS1101S`, `MB: Prof Tan`, `MB: Networking`.
+
+#### The file is the truth
+`data/rules.json` holds a profile and three lists: courses, senders, topics. `mailbrief rules add/remove/profile` edits it, and so can you by hand.
+- **`load()`** re-reads it only when the file's modification time changes, so asking "what are the rules?" hundreds of times per run costs nothing.
+- **`validate()`** turns whatever is in the file into a clean, predictable shape, or raises `RulesError` naming the exact problem ("senders #2: needs a label"). Bare course strings become objects, codes are upper-cased, and names that clash with built-in labels (`Urgent`, `P2`) are refused.
+- **`save()`** validates first, then writes a temp file and renames it, the same atomic trick as the archive.
+
+#### Code where code can decide, AI where it takes judgement
+```
+matches(email, rules) → [(label, priority floor, boosted)]
+  course   whole-word code in subject, sender name, first 1,000 chars of body       code
+  sender   exact address, or part of the name; --direct also needs email.direct     code
+  topic    the topic is in classification.tags (the AI said so)                     AI
+```
+- **Courses and senders are exact questions**, so code answers them: free, instant, and the same answer every time.
+- **"Is this a networking opportunity?" needs judgement**, so the classifier answers it. It gets your topic descriptions in the prompt (the same "definitions" trick that made the categories score 12/12) and returns `tags`. `validate` drops any name not in your list, so the AI can't invent labels.
+- **Only the start of the body** is scanned for course codes. A newsletter listing twenty courses would otherwise collect twenty labels. (`ponytail:` if that's still noisy, "subject only for bulk senders" is the upgrade.)
+- **With no profile and no topics the prompt is byte-for-byte the old one**, so the benchmark still holds.
+
+#### Priority floors and boosts
+```
+effective(email, rules):
+    found    = matches(email, rules)
+    boosted  = any rule in found says boosted
+    priority = the most important of: AI priority, every floor in found,
+               and P2 if boosted with no floor of its own
+```
+- **A topic match is boosted** only when the AI also said `boost: true` ("fits your profile"). Without a profile, every topic match boosts.
+- **Course and sender rules** boost when added with `--boost`.
+- **Boosted emails** get ⭐ in a digest section of their own, OPPORTUNITIES & EVENTS.
+
+#### How a rule change reaches Outlook (no new machinery)
+`labels.labels_for(email)` now asks `rules.effective()` too. Everything downstream is unchanged:
+```
+labels_for(email) = [MB: category, MB: P<effective priority>] + rule labels + kept labels
+pending()         = emails whose labels_for ≠ outlook_labels   (as before)
+```
+So adding a course needs no special "re-apply" step. The next run (or `labels apply`) sees every matching email as pending and labels it. This is why courses and senders apply to the whole archive at once with no AI.
+
+- **Kept labels:** a custom label already in `outlook_labels` whose rule no longer exists stays, as history. When the semester ends and you remove MA1521, old emails keep `MB: MA1521`. To take it off, `labels clear --label MA1521` calls `remove_label`, which updates Outlook and the archive, so it's never put back. `--everywhere` uses Outlook's own "delete this category everywhere" operation, so the archive forgets the label on **every** email too, not only a period: otherwise a later relabel of an untouched email would write it back as "history". Clearing a label that an active rule still gives is refused, because the next run would simply re-apply it.
+- **A rule that still exists but no longer matches** (say you edited the address) does take its label off. Outlook mirrors your *current* rules, plus history from removed ones.
+- **A broken rules file skips labelling for that run.** If the file were read as "no rules", every custom label would look wrong and be stripped from hundreds of emails. A warning and a skipped step are much cheaper than that. The digest still goes out.
+- **Topics on older mail** need the AI again: `labels retag` re-classifies a period with your current rules, keeping the old answer when a call fails.
+
+#### Recipients
+`direct` needs To/Cc, so `GetItem` now asks for `ToRecipients` and `CcRecipients`. `fetch_emails`, which already knows your address for `from_me`, sets `direct = (to == [you])`. Checked on the real mailbox: a feedback request and a graded-midterm email were direct, while a faculty newsletter (To: a student list) and a fee reminder (To: two of your addresses) were not. A known limit: **mail merges** (e.g. individually sent grade emails) are also "only you", so `--direct` is paired with a sender match, never used alone. Old archive entries get recipients from a one-off `run --backfill`: it re-fetches records with GetItem, and since their classifications are reused, no AI is called.
+
 ---
 
 ## 8. The full run, end to end
@@ -1303,7 +1359,8 @@ Each module with real logic has one small test script, `tests/test_<module>.py`:
 | `test_archive` | encryption round-trip, plain JSON, merge without duplicates, month split, time-zone sorting, format switch, migration, wrong key, period boundaries incl. a year rollover, pruning |
 | `test_threads` | reply-tree ordering (the "Ana replies to your reply after Bob" case), depth, `replied` only counting later messages, context lines |
 | `test_progress` | when piped: timestamped step lines, counters only at 25% steps, `working` start and ✓ lines, ✗ on failure, never a `\r` |
-| `test_labels` | label names (and what gets none: sent, other-folder, unclassified, previews); merging keeps your categories and swaps ours; pending/labelled/cleared/gone selection; period and day selection; parsing GetItem/UpdateItem replies incl. "gone"; built requests pass the guard; the guard refuses moves/deletes/sends, an `IsRead` change (as the field or hidden in the item), `SendAndSaveCopy`, empty updates and non-`MB:` category edits; reading the category list from StartupData |
+| `test_labels` | label names (and what gets none: sent, other-folder, unclassified, previews); merging keeps your categories and swaps ours; pending/labelled/cleared/gone selection; period and day selection; parsing GetItem/UpdateItem replies incl. "gone"; built requests pass the guard; the guard refuses moves/deletes/sends, an `IsRead` change (as the field or hidden in the item), `SendAndSaveCopy`, empty updates and non-`MB:` category edits; reading the category list from StartupData; your own labels beside the built-ins, floors raising `MB: P<n>`, kept labels from removed rules |
+| `test_rules` | `rules.json` checks (built-in name clashes, duplicates, missing labels/descriptions, bad priorities); whole-word course codes, only the start of the body; sender address/name and direct-only; topic tags, boosts with and without a profile, removed topics; adding replaces, save/load, a broken file raises |
 | `test_service` | every `RUN_AT` form parses (daily, weekdays, weekends, day lists, `day-N`, scopes) and bad ones are rejected; due runs: on time, not early, three days off = one catch-up, latest per scope (daily + weekly + monthly), nothing when done; next run across weekends and months; only `new` commits; the lock is exclusive and released |
 
 **Real-world checks** were also done against your actual inbox during development:
@@ -1367,8 +1424,11 @@ Each of these was found by running against real Outlook, and each shaped the cod
 **Roadmap** (README §12):
 - **M4 ✅:** `MB: <category>` + `MB: P<priority>` labels in Outlook, coloured, applied every run, easy to clear (section 7.16). The session-expired alert came with M5.
 - **M5 ✅:** `serve` with an extensible schedule, `stop` / `status`, autostart at logon, run locks, logs, the login alert, Docker files (section 7.15).
-- **M6:** optional self-healing browser agent behind a code-enforced blocklist, and a "move to folders" mode.
-- **Later:** WhatsApp/Slack/email delivery, Gmail, Browserless (Docker/cloud), a dashboard, multiple users.
+- **M6a ✅:** your own labels: courses, professors (direct-only), AI topics, a profile, priority floors, boosts and the OPPORTUNITIES & EVENTS section (section 7.17). Telegram `/label` commands come with M7.
+- **M6b:** newsletter images and events: inline images read, an `events` list per email, an UPCOMING EVENTS message.
+- **M7:** ask your inbox in Telegram (search index, cited answers, attachments).
+- **M8:** optional self-healing browser agent behind a code-enforced blocklist, failure screenshots, and a "move to folders" mode.
+- **Later:** WhatsApp/Slack/email delivery, Gmail, Browserless (Docker/cloud), a dashboard. Multi-user hosting is cancelled (README §13).
 
 ---
 

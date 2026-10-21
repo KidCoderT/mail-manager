@@ -123,6 +123,7 @@ _GETITEM_FIELDS = (
     "Subject", "From", "DateTimeReceived", "Body", "Importance",
     "IsRead", "HasAttachments", "Attachments", "ConversationId",
     "ConversationIndex", "InReplyTo", "InternetMessageId", "DateTimeSent",
+    "ToRecipients", "CcRecipients",
 )
 
 
@@ -152,6 +153,17 @@ def _clean(text: str) -> str:
 
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp")
 IMAGE_MIN, IMAGE_MAX, IMAGES_PER_EMAIL = 15_000, 5_000_000, 3
+
+
+def addresses(recipients: list | None) -> list[str]:
+    """Lowercased addresses from a To/Cc list (entries are bare mailboxes or wrapped in "Mailbox")."""
+    out = []
+    for r in recipients or []:
+        if isinstance(r, dict):
+            addr = (r.get("Mailbox") or r).get("EmailAddress") or ""
+            if addr:
+                out.append(addr.lower())
+    return out
 
 
 def image_attachments(attachments: list) -> list[dict]:
@@ -187,6 +199,8 @@ def parse_items(response: dict) -> list[dict]:
                 "has_attachments": bool(it.get("HasAttachments")),
                 "attachment_names": [a.get("Name") for a in it.get("Attachments") or [] if a.get("Name")],
                 "image_attachments": image_attachments(it.get("Attachments")),
+                "to": addresses(it.get("ToRecipients")),
+                "cc": addresses(it.get("CcRecipients")),
                 "is_read": bool(it.get("IsRead")),
                 "importance": it.get("Importance") or "Normal",
                 "body_source": "getitem",
@@ -229,6 +243,8 @@ def preview_records(conversations: list[dict]) -> list[dict]:
         "has_attachments": c["has_attachments"],
         "attachment_names": [],
         "image_attachments": [],
+        "to": [],
+        "cc": [],
         "is_read": None,
         "importance": c["importance"],
         "body_source": "preview",

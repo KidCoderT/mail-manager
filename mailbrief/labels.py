@@ -8,7 +8,7 @@ import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 
-from mailbrief import archive
+from mailbrief import archive, rules
 
 # Outlook's colour numbers (the same presets as Settings → Categories).
 CATEGORY_COLOURS = {"Urgent": 0, "Needs Reply": 1, "Meetings": 8, "FYI": 7, "Newsletter": 4, "Low Priority": 12}
@@ -17,6 +17,7 @@ PRIORITY_COLOURS = {1: 15, 2: 1, 3: 3, 4: 5, 5: 12}
 #                   dark red, orange, yellow, teal, grey
 ALL_LABELS = {**{f"MB: {c}": col for c, col in CATEGORY_COLOURS.items()},
               **{f"MB: P{p}": col for p, col in PRIORITY_COLOURS.items()}}
+CUSTOM_COLOURS = {"courses": 22, "senders": 9, "topics": 19}  # your own labels: dark blue, cranberry, dark green
 RUN_LIMIT = 400  # per run; the first run on a big archive finishes the rest next time
 
 
@@ -28,13 +29,32 @@ def enabled() -> bool:
     return os.environ.get("OUTLOOK_LABELS", "on").strip().lower() not in ("off", "0", "false", "no")
 
 
-def labels_for(email: dict) -> list[str]:
-    """The MB: labels this email should carry: [] for anything that isn't a classified inbox email from someone else."""
+def labels_for(email: dict, r: dict | None = None) -> list[str]:
+    """The MB: labels this email should carry: [] for anything that isn't a classified inbox email from someone else.
+    Built-in category + priority (raised by your rules), your rule labels, and labels of rules you've since removed
+    (kept as history until `labels clear --label`). `r` = rules (default: data/rules.json)."""
     c = email.get("classification") or {}
     if c.get("category") not in CATEGORY_COLOURS or email.get("from_me") or not email.get("in_inbox", True) \
             or email.get("body_source") != "getitem":  # preview records carry a conversation id, not an email id
         return []
-    return [f"MB: {c['category']}"] + ([f"MB: P{c['priority']}"] if c.get("priority") in PRIORITY_COLOURS else [])
+    r = rules.load() if r is None else r
+    eff = rules.effective(email, r)
+    current = rules.rule_labels(r)
+    kept = [n for n in email.get("outlook_labels") or [] if is_custom(n) and n not in current and n not in eff["labels"]]
+    return [f"MB: {c['category']}"] + ([f"MB: P{eff['priority']}"] if eff["priority"] in PRIORITY_COLOURS else []) \
+        + eff["labels"] + kept
+
+
+def is_custom(name: str) -> bool:
+    """A label from your own rules (not one of the built-in category / priority labels)."""
+    return name.startswith("MB: ") and name not in ALL_LABELS
+
+
+def _colours(names) -> dict[str, int]:
+    """Colours for these labels: built-ins as above, your own by kind (CUSTOM_COLOURS)."""
+    r = rules.load()
+    kind_of = {rules.label_name(k, rule): k for k in rules.KINDS for rule in r[k]}
+    return {n: ALL_LABELS.get(n, CUSTOM_COLOURS.get(kind_of.get(n), CUSTOM_COLOURS["topics"])) for n in names}
 
 
 def select(emails: list[dict], period: str | None, days: int | None, today, tz) -> list[dict]:
@@ -49,9 +69,10 @@ def select(emails: list[dict], period: str | None, days: int | None, today, tz) 
 
 def pending(emails: list[dict], include_cleared: bool = False) -> list[dict]:
     """Emails whose MB: labels in Outlook aren't what they should be (newest first, as given)."""
-    return [e for e in emails if labels_for(e) and not e.get("outlook_gone")
+    r = rules.load()
+    return [e for e in emails if (want := labels_for(e, r)) and not e.get("outlook_gone")
             and (include_cleared or not e.get("labels_cleared"))
-            and labels_for(e) != e.get("outlook_labels")]
+            and want != e.get("outlook_labels")]
 
 
 def labelled(emails: list[dict]) -> list[dict]:
@@ -97,9 +118,11 @@ def apply(emails: list[dict]) -> str:
     from mailbrief.browser.outlook_writer import ensure_categories, set_labels
     from mailbrief.browser.owa_network import master_categories
 
-    wanted = {e["id"]: labels_for(e) for e in emails}
+    r = rules.load()
+    wanted = {e["id"]: labels_for(e, r) for e in emails}
+    names = {**ALL_LABELS, **_colours(n for labels in wanted.values() for n in labels)}
     with outlook() as (page, auth, startup):
-        added = ensure_categories(page, auth, master_categories(startup), ALL_LABELS)
+        added = ensure_categories(page, auth, master_categories(startup), names)
         results = set_labels(page, auth, wanted)
     archive.update_fields({i: {"outlook_labels": wanted[i], "labels_cleared": False} if r == "ok" else {"outlook_gone": True}
                            for i, r in results.items() if r in ("ok", "gone")})
@@ -119,7 +142,7 @@ def clear(emails: list[dict], colours: bool = False) -> str:
         removed = []
         if colours:
             existing = master_categories(startup) or {}
-            removed = [n for n in existing if n in ALL_LABELS]
+            removed = [n for n in existing if n.startswith("MB: ")]  # built-in and your own
             if removed:
                 remove_categories(page, auth, removed)
     archive.update_fields({i: {"outlook_labels": [], "labels_cleared": True}
@@ -127,11 +150,38 @@ def clear(emails: list[dict], colours: bool = False) -> str:
     return f"Cleared labels: {_tally(results)}" + (f"; deleted {len(removed)} MB: categories from your list" if removed else "")
 
 
+def remove_label(emails: list[dict], name: str, everywhere: bool = False) -> str:
+    """Take one of your own labels off: from these emails (MailBrief-tracked), or with everywhere=True from every
+    email in the mailbox and from your category list. The archive forgets it, so it's never re-applied."""
+    from mailbrief.browser.outlook_writer import remove_categories, set_labels
+
+    if not is_custom(name):
+        raise ValueError(f"{name!r} isn't one of your own labels (built-in ones: `labels clear`)")
+    results = {}
+    with outlook() as (page, auth, _startup):
+        if everywhere:
+            remove_categories(page, auth, [name])
+            results = {e["id"]: "ok" for e in emails}
+        elif emails:
+            results = set_labels(page, auth, {e["id"]: [n for n in e["outlook_labels"] if n != name] for e in emails},
+                                 label=f"Removing {name}")
+    by_id = {e["id"]: e for e in emails}
+    archive.update_fields({i: {"outlook_labels": [n for n in by_id[i]["outlook_labels"] if n != name]}
+                           for i, r in results.items() if r in ("ok", "gone")})
+    where = "everywhere in your mailbox and your category list" if everywhere else _tally(results)
+    return f"Removed {name}: {where}"
+
+
 def run_step(log) -> None:
     """The labelling step of `mailbrief run`: label what's pending (capped), never failing the run."""
     from mailbrief import progress
 
     if not enabled():
+        return
+    try:
+        rules.load()
+    except rules.RulesError as e:  # never relabel from a broken file: it would strip your labels everywhere
+        print(f"warning: Outlook labels skipped this run: {e}", file=log)
         return
     try:
         todo = pending(archive.load()[0])

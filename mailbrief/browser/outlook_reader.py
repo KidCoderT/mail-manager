@@ -176,6 +176,7 @@ def fetch_emails(page, auth: dict, conversations: list[dict], me: str | None = N
     for r in records:
         r["in_inbox"] = r["id"] in inbox_ids
         r["from_me"] = bool(me) and r["sender_email"].lower() == me.lower()
+        r["direct"] = bool(me) and r.get("to") == [me.lower()]  # you're the only To recipient
     return records, True
 
 

@@ -8,7 +8,7 @@ Run all commands from the project folder (`mail-manager/`). They are run with **
 - [2. `mailbrief login`](#2-mailbrief-login)
 - [3. `mailbrief run`](#3-mailbrief-run)
 - [4. `mailbrief emails`](#4-mailbrief-emails)
-- [5. `mailbrief labels`: MB: labels in Outlook](#5-mailbrief-labels)
+- [5. `mailbrief labels` and `mailbrief rules`: MB: labels in Outlook, and your own](#5-mailbrief-labels)
 - [6. `mailbrief add-destination`](#6-mailbrief-add-destination)
 - [7. Running automatically: `serve`, `stop`, `status`, `autostart`, hosting](#7-running-automatically)
 - [8. Developer commands (tests, checks)](#8-developer-commands)
@@ -333,6 +333,8 @@ uv run mailbrief emails --search fee --thread 2  # read the whole conversation
 
 ## 5. `mailbrief labels`
 
+*(and `mailbrief rules`, for labels you define yourself: [below](#your-own-labels-mailbrief-rules))*
+
 MailBrief puts its classification **on the emails in Outlook**, as Outlook *categories*:
 
 ```
@@ -355,6 +357,7 @@ Each inbox email gets **two labels**: its category and its priority.
 - **Filtering:** search `category:"MB: Urgent"`, or Filter → Categories.
 - **Colours:** the 11 categories are created once in your category list (Settings → Mail → Categories). Recolour or rename them there if you like; MailBrief never changes an existing one.
 - **Your own categories are never touched.** MailBrief reads each email's categories first and swaps only the `MB:` ones.
+- **Your own labels** (courses, professors, topics) sit beside these two; see [Your own labels](#your-own-labels-mailbrief-rules).
 - **Only these emails get labels:** inbox emails from other people with a real classification. Not your sent mail, other-folder copies, `Unclassified` emails, or list-preview-only records.
 - **Nothing else changes:** read/unread state, folder and flags stay as they were. The sender isn't notified (categories are private to your mailbox).
 
@@ -393,6 +396,19 @@ uv run mailbrief labels clear --all --colours        # …and delete the 11 MB: 
 - **Other options:** `--dry-run` shows what would change without touching Outlook. `--limit N` handles at most N emails, newest first.
 - Clearing 360 emails takes about a minute.
 
+#### One of your own labels: `--label`
+```
+uv run mailbrief labels clear --label MA1521 --dry-run     # which emails carry MB: MA1521
+uv run mailbrief labels clear --label MA1521               # remove it from every email MailBrief gave it to
+uv run mailbrief labels clear --label MA1521 --everywhere  # …from EVERY email in the mailbox, and delete it from your category list
+```
+- **Why you need it:** when you remove a rule (`rules remove course MA1521`), emails already labelled **keep** the label as history. This is how you take it off.
+- **Remove the rule first.** If a rule still gives the label, it's refused (exit 2): the next run would only put it back.
+- **Default scope is all periods**; narrow it with `--period` / `--days` / `--limit`.
+- **`--everywhere`** also catches emails MailBrief never tracked (e.g. ones you labelled by hand with the same name). It uses the same Outlook operation as deleting the category in Settings, so it ignores `--period` / `--days` / `--limit`: the label goes from every email.
+- **Always asks first** (`Go ahead? [y/N]`, or `--yes`). The archive forgets the label, so runs never put it back.
+- Only your own labels: built-in ones (`MB: FYI`, `MB: P2`…) are cleared with `--period` / `--days` / `--all` above.
+
 ### `mailbrief labels apply`: label now
 ```
 uv run mailbrief labels apply                     # everything pending, plus anything you cleared
@@ -401,13 +417,26 @@ uv run mailbrief labels apply --limit 1 --dry-run # which email would be next, a
 ```
 - Use it after a `clear` to bring labels back, or to label without waiting for a run.
 - It also re-creates the coloured categories if you deleted them.
+- After adding a course or sender rule, `labels apply --dry-run` shows exactly which emails will get it. No AI involved.
+
+### `mailbrief labels retag`: ask the AI again
+```
+uv run mailbrief labels retag --period this-month --dry-run   # how many emails, how many AI calls
+uv run mailbrief labels retag --period this-month             # re-classify them with your current profile and topics
+uv run mailbrief labels retag --days 7 --yes
+```
+- **When:** after adding or changing a **topic** or your **profile**. Those are AI decisions, so older mail only gets them when the AI is asked again. Course and sender rules never need this.
+- **Cost:** about one AI call per email, a few minutes for a month. It asks before starting (`--yes` skips the question).
+- **Images:** emails with image attachments are re-read from Outlook (images are never saved); the rest needs no Outlook at all.
+- **Failed calls keep the old classification.** Outlook labels are updated straight after.
+- Needs `--period` or `--days`. Never at the same time as a run (exit 3).
 
 ### Exit codes
 | Code | Meaning |
 |---|---|
 | 0 | Done (or nothing to do, or a dry run) |
-| 1 | You answered no (or there's no terminal and no `--yes`), or the archive can't be read |
-| 2 | `clear` without `--period` / `--days` / `--all`, or Outlook needs `mailbrief login` |
+| 1 | You answered no (or there's no terminal and no `--yes`), or the archive or `data/rules.json` can't be read |
+| 2 | `clear` without `--period` / `--days` / `--all` / `--label`; `--label` naming a built-in label or one a rule still gives; `--everywhere` without `--label`; `retag` without `--period` / `--days`; or Outlook needs `mailbrief login` |
 | 3 | A run is in progress. Labels never change at the same time as a run |
 
 ### Safety, in code
@@ -416,6 +445,49 @@ Every request MailBrief sends to Outlook passes one check (`check_request` in `o
 - **`UpdateItem`** is allowed only if every change sets or deletes the **Categories** field and nothing else, with "save only" (no sending);
 - **the category list** may only gain or lose names starting with `MB: `;
 - **anything else** (move, delete, send, mark read, rules…) is refused with an error before any network call.
+
+Your own labels need no new permission: they're `MB: ` categories too.
+
+### Your own labels: `mailbrief rules`
+Labels you define, beside the category and priority. They live in **`data/rules.json`** (personal, git-ignored, plain JSON you can also edit by hand).
+
+```
+uv run mailbrief rules list                                           # your rules + how many saved emails each matches
+uv run mailbrief rules profile "Year 2 CS student looking for internships, hackathons and networking"
+uv run mailbrief rules add course CS1101S                             # → MB: CS1101S
+uv run mailbrief rules add course CS2103T --priority 2                # …and at least P2
+uv run mailbrief rules add sender tan@nus.edu.sg --label "Prof Tan" --direct --priority 1
+uv run mailbrief rules add sender "Career Centre" --label Careers --boost
+uv run mailbrief rules add topic Networking "career fairs, meetups, recruiter outreach, hackathons, tech talks" --priority 2
+uv run mailbrief rules remove course MA1521                           # old emails keep MB: MA1521 (labels clear --label removes it)
+```
+
+| Kind | Matched by | Gives |
+|---|---|---|
+| **course** | **Code, no AI:** the code as a whole word in the subject, the sender's name or the first 1,000 characters of the body (so course-listing newsletters don't collect every code). Case doesn't matter. | `MB: CS1101S` |
+| **sender** | **Code, no AI:** an exact address, or (without `@`) part of the sender's name. `--direct`: only when **you are the only To recipient**, i.e. private mail, not a class announcement. (Mail merges, such as individually sent grade emails, also count as "only you".) | `MB: Prof Tan` |
+| **topic** | **AI:** the classifier gets your topic descriptions and says which fit. Only names from your list are accepted. | `MB: Networking` |
+| **profile** | **AI:** who you are and what you want. The classifier uses it for priority and to judge boosts; the digest sees it too. | (no label) |
+
+- **`--priority N`:** matching mail is at least P*N*. The more important of the AI's priority and the rule's wins, so `MB: P<n>` changes too.
+- **Boosted ⭐:** listed under **OPPORTUNITIES & EVENTS** in the digest, and raised to at least P2 (unless a rule sets its own floor). An email is boosted when:
+  - it gets one of your **topic** labels **and** the AI judges it fits your **profile** (without a profile, any topic label boosts), or
+  - it matches a **course or sender** rule added with `--boost` (e.g. your career office).
+- **Adding again replaces** the rule with the same code / address / topic name.
+- **Courses and senders apply without AI:** the next run (or `labels apply`) relabels the whole archive. **Topics and profile** apply to new mail; `labels retag` does older mail.
+- **Removing a rule keeps its labels** on emails that already have them, as history. `labels clear --label NAME` removes them.
+- **Names** are up to 40 characters, without `,` or `;`, and can't be a built-in label (`Urgent`, `P2`…).
+- **Colours:** courses dark blue, senders cranberry, topics dark green (recolour them in Outlook if you like).
+- **A broken `rules.json`** (say, a typo while hand-editing) never breaks the morning digest: the run warns, classifies without rules, and **skips Outlook labelling** that run so your labels aren't stripped. `rules list` shows the exact error.
+- **`emails --show N`** shows an email's own labels (`Yours: …`), whether it's boosted, and its `To:` line ("only you" for private mail).
+- **Telegram commands** (`/label add …`) come with the Telegram chat in M7.
+
+#### One-off after upgrading: recipients
+`--direct` needs each email's To/Cc, which older saved emails don't have. Fill them in once:
+```
+uv run mailbrief run --backfill
+```
+It re-reads every inbox email with GetItem but **asks the AI only about emails it hasn't classified yet**. It also advances the cursor, so run it **right after your morning run**; otherwise mail that arrived in between is skipped by the next morning digest. New mail always has recipients.
 
 ---
 
@@ -610,6 +682,7 @@ uv run python tests/test_archive.py       # encryption, merge/dedupe, months, mi
 uv run python tests/test_threads.py       # reply ordering, depth, "you replied", AI context lines
 uv run python tests/test_progress.py      # progress output when piped: quarter counters, ✓/✗ lines, no "\r"
 uv run python tests/test_labels.py        # label names, keeping your categories, pending/cleared selection, request shapes, the write guard
+uv run python tests/test_rules.py         # your own labels: rules.json checks, course/sender/direct matching, topics, floors, boosts
 uv run python tests/test_service.py       # RUN_AT parsing (and rejecting bad ones), catch-up/due runs, next run, run flags, locks
 ```
 All of them in one go (Git Bash):
@@ -658,6 +731,7 @@ Listed in `.env.example` but **not used by the code yet** (planned for later mil
 | File | Created by | Contents | Sensitive? |
 |---|---|---|---|
 | `data/session.enc` | `login`, refreshed by every `run` | Outlook cookies + browser identity, encrypted | **Yes**: full mailbox access |
+| `data/rules.json` | `rules add/remove/profile` (or you, by hand) | Your own labels: profile, courses, senders, topics | No (rules only, no email content) |
 | `data/cursor.json` | `run --commit`, `run --backfill` | Newest processed time + last 500 email IDs | No (IDs only) |
 | `data/archive/YYYY-MM.enc` | every `run` | That month's emails, classifications, digests, encrypted | Yes (encrypted) |
 | `data/archive/YYYY-MM.json` | `run --no-password` | Same, **plain text** | **Yes, unencrypted** |

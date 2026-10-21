@@ -1,4 +1,4 @@
-from mailbrief.ai.classifier import BODY_LIMIT, trim_body, validate
+from mailbrief.ai.classifier import BODY_LIMIT, rules_block, trim_body, validate
 from mailbrief.ai.client import extract_json
 
 
@@ -11,7 +11,8 @@ def test_extract_json():
 
 def test_validate():
     ok = validate({"category": "Urgent", "priority": 1, "one_line_summary": " x ", "action_items": ["a", ""], "deadline": "2026-10-20"})
-    assert ok == {"category": "Urgent", "priority": 1, "one_line_summary": "x", "action_items": ["a"], "deadline": "2026-10-20"}
+    assert ok == {"category": "Urgent", "priority": 1, "one_line_summary": "x", "action_items": ["a"], "deadline": "2026-10-20",
+                  "tags": [], "boost": False}
     assert validate({"category": "Spam"}) is None
     assert validate(None) is None
     loose = validate({"category": "FYI", "priority": 9, "deadline": "next Friday"})
@@ -25,6 +26,17 @@ def test_trim_body():
     assert trim_body(outlook) == "Approved."
     assert len(trim_body("x" * (BODY_LIMIT + 50))) == BODY_LIMIT
     assert trim_body("On Monday we ship.\nThanks") == "On Monday we ship.\nThanks"  # not a quote header
+
+
+def test_tags_and_rules_prompt():
+    topics = ("Networking", "CS jobs")
+    c = validate({"category": "FYI", "priority": 2, "tags": ["networking", "Spam", "CS jobs", "Networking", 3], "boost": "yes"}, topics)
+    assert c["tags"] == ["Networking", "CS jobs"] and c["boost"] is False  # only your topics; boost must be true itself
+    assert validate({"category": "FYI", "tags": "Networking", "boost": True}, topics)["tags"] == []
+    assert validate({"category": "FYI", "boost": True}, topics)["boost"] is True
+    assert rules_block(None) == "" and rules_block({"profile": "", "topics": []}) == ""  # benchmarked prompt untouched
+    block = rules_block({"profile": "CS student", "topics": [{"name": "Networking", "description": "meetups"}]})
+    assert "CS student" in block and "Networking = meetups" in block and '"tags"' in block and '"boost"' in block
 
 
 if __name__ == "__main__":
