@@ -5,9 +5,14 @@ from urllib.parse import unquote, urlparse
 
 from mailbrief import progress
 from mailbrief.browser.owa_network import (
+    IMAGE_BUDGET,
+    IMAGES_PER_EMAIL,
     check_request,
     find_user_email,
     getitem_body,
+    html_bodies,
+    html_getitem_body,
+    image_urls,
     parse_items,
     parse_messages,
     preview_records,
@@ -201,6 +206,37 @@ def fetch_images(page, auth: dict, email: dict) -> list[str]:
                 ctype = a.get("ContentType") if str(a.get("ContentType", "")).startswith("image/") else "image/png"
                 urls.append(f"data:{ctype};base64,{a['Content']}")
     return urls
+
+
+def fetch_image_urls(page, auth: dict, emails: list[dict]) -> dict[str, list[str]]:
+    """{email id: linked image URLs worth trying} via read-only GetItem of the HTML bodies. The HTML is parsed
+    here and dropped. A failure just means no linked images this time."""
+    ids = [e["id"] for e in emails if e.get("body_source") == "getitem"]
+    out = {}
+    for n in range(0, len(ids), GETITEM_BATCH):
+        resp = _service_call(page, auth, "GetItem", lambda header: html_getitem_body(header, ids[n : n + GETITEM_BATCH]))
+        if resp is None or not resp.ok:
+            break
+        out.update({i: image_urls(html) for i, html in html_bodies(resp.json()).items()})
+    return out
+
+
+def collect_images(page, auth: dict, emails: list[dict]) -> dict[str, list[str]]:
+    """{email id: images as data URLs} for the vision model (memory only): attached and inline images first,
+    then (REMOTE_IMAGES on) linked ones to fill what's left of IMAGES_PER_EMAIL / IMAGE_BUDGET."""
+    from mailbrief import web_images
+
+    links = fetch_image_urls(page, auth, emails) if web_images.enabled() else {}
+    wanted = [e for e in emails if e.get("image_attachments") or links.get(e["id"])]
+    images = {e["id"]: [] for e in emails}
+    for n, e in enumerate(wanted, 1):
+        got = fetch_images(page, auth, e)
+        used = sum(a.get("size") or 0 for a in (e.get("image_attachments") or [])[: len(got)])
+        if links.get(e["id"]) and len(got) < IMAGES_PER_EMAIL:
+            got += web_images.download(links[e["id"]], IMAGES_PER_EMAIL - len(got), IMAGE_BUDGET - used)
+        images[e["id"]] = got
+        progress.count("Fetching images", n, len(wanted))
+    return images
 
 
 def _service_call(page, auth: dict, action: str, make_body):

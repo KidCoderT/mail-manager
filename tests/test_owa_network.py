@@ -1,4 +1,5 @@
-from mailbrief.browser.owa_network import BODY_CAP, find_user_email, image_attachments, parse_items, parse_messages, preview_records, view_total
+from mailbrief.browser.owa_network import (BODY_CAP, check_request, find_user_email, html_bodies, html_getitem_body, image_attachments,
+                                           image_urls, parse_items, parse_messages, preview_records, view_total)
 
 # Shaped like Outlook's FindConversation response (conversation view).
 CONVERSATIONS = {
@@ -119,13 +120,36 @@ def test_image_attachments_filter():
     att = lambda name, ctype, size, inline=None, id="a": {"Name": name, "ContentType": ctype, "Size": size, "IsInline": inline, "AttachmentId": {"Id": id}}
     keep = image_attachments([
         att("photo.jpg", "image/jpeg", 200_000, id="1"),
-        att("logo.png", "image/png", 40_000, inline=True),       # signature logo
+        att("image001.png", "image/png", 17_000, inline=True),   # inline signature logo: under 30 KB
+        att("poster.png", "image/png", 450_000, inline=True, id="3"),  # inline poster: kept now
         att("tiny.png", "image/png", 2_000),                      # tracking pixel / icon
-        att("huge.png", "image/png", 9_000_000),
+        att("small.png", "image/png", 16_000, id="s"),           # attached, over 15 KB: kept
+        att("huge.png", "image/png", 9_000_000),                  # over 5 MB
         att("report.pdf", "application/pdf", 300_000),
         att("scan.PNG", "application/octet-stream", 80_000, id="2"),  # wrong content type, image name
     ] + [att(f"p{i}.png", "image/png", 50_000, id=f"x{i}") for i in range(5)])
-    assert [a["id"] for a in keep] == ["1", "2", "x0"]  # capped at 3 per email
+    assert [a["id"] for a in keep] == ["1", "3", "s", "2", "x0"]  # capped at 5 per email
+    budget = image_attachments([att(f"b{i}.png", "image/png", 3_000_000, id=f"b{i}") for i in range(4)]
+                               + [att("last.png", "image/png", 1_500_000, id="last")])
+    assert [a["id"] for a in budget] == ["b0", "b1", "last"]  # 8 MB per email: the 3rd and 4th 3 MB ones don't fit
+
+
+def test_image_urls_and_html_request():
+    html = """<img src="https://cdn.x.com/poster1.jpg"><IMG alt=x SRC='https://cdn.x.com/poster2.png'>
+      <img src="https://cdn.x.com/poster1.jpg">  <img src="http://cdn.x.com/plain.jpg">
+      <img src="https://cdn.x.com/Facebook30.png"><img src="https://cdn.x.com/logo-white.png">
+      <img src="https://t.x.com/open.gif?u=123"><img src="https://cdn.x.com/a.png?w=600">
+      <img src="cid:image001.png@01DC"><img src="https://cdn.x.com/spacer.gif"><img src="https://cdn.x.com/ed-avatar.png">"""
+    assert image_urls(html) == ["https://cdn.x.com/poster1.jpg", "https://cdn.x.com/poster2.png"]
+    assert image_urls("") == [] and image_urls(None) == []
+    body = html_getitem_body({"h": 1}, ["i1"])
+    check_request("GetItem", body)  # a read: allowed
+    shape = body["Body"]["ItemShape"]
+    assert shape["BodyType"] == "HTML" and [f["FieldURI"] for f in shape["AdditionalProperties"]] == ["Body"]
+    resp = {"Body": {"ResponseMessages": {"Items": [
+        {"ResponseClass": "Success", "Items": [{"ItemId": {"Id": "i1"}, "Body": {"Value": "<p>hi</p>"}}]},
+        {"ResponseClass": "Error", "Items": []}]}}}
+    assert html_bodies(resp) == {"i1": "<p>hi</p>"}
 
 
 def test_parse_items():

@@ -7,7 +7,7 @@ Run all commands from the project folder (`mail-manager/`). They are run with **
 - [1. One-time setup commands](#1-one-time-setup-commands)
 - [2. `mailbrief login`](#2-mailbrief-login)
 - [3. `mailbrief run`](#3-mailbrief-run)
-- [4. `mailbrief emails`](#4-mailbrief-emails)
+- [4. `mailbrief emails` (and `mailbrief events`, the UPCOMING EVENTS calendar)](#4-mailbrief-emails)
 - [5. `mailbrief labels` and `mailbrief rules`: MB: labels in Outlook, and your own](#5-mailbrief-labels)
 - [6. `mailbrief add-destination`](#6-mailbrief-add-destination)
 - [7. Running automatically: `serve`, `stop`, `status`, `autostart`, hosting](#7-running-automatically)
@@ -101,17 +101,20 @@ It **never** deletes, moves, sends or marks anything as read. The only thing it 
 5. **Picks conversations** whose latest email is on or after the cursor time.
 6. **Fetches every message** in those conversations, in any folder, so your Sent replies are included. It uses Outlook's own read-only `GetItem` call, 20 at a time.
 7. **Selects the new inbox emails:** received ≥ cursor, ID not already processed, not sent by you.
-8. **Downloads image attachments**, but only for emails that still need the AI. Real images only, 15 KB–5 MB, at most 3 per email, memory only.
+8. **Collects images**, but only for emails that still need the AI, in memory only, at most 5 images and 8 MB per email:
+   - attached images of 15 KB–5 MB and inline ones (posters in the body) of 30 KB–5 MB, through `GetAttachment`;
+   - with `REMOTE_IMAGES=on` (the default), **linked images**: a read-only GetItem reads the emails' HTML, keeps https image URLs that don't look like icons, logos or trackers, and downloads them with safety checks (no local-network addresses, no redirects, size and type limits). The senders' image servers see your IP. Details: README §3.10.
 9. **Saves the refreshed session.** Microsoft rotates cookies, so saving keeps the login alive longer.
 10. **Builds threads:** groups messages by conversation, orders them parent-before-reply, marks emails you already answered as `replied`.
 11. **Classifies** new emails with the AI, 4 conversations in parallel and each conversation's emails oldest first, so a reply sees its parent's summary:
     - text-only emails go to `AI_CLASSIFIER_MODEL` (qwen3.6:35b);
-    - emails with images go to `AI_VISION_MODEL` (qwen3.8:27b).
+    - emails with images go to `AI_VISION_MODEL` (qwen3.8:27b);
+    - besides category and priority, each email's **events** are listed (name, one-line detail, date, time, place, link, sign-up deadline), from its text and images.
 12. **Saves** all fetched messages with their classifications to `data/archive/YYYY-MM.enc`. This happens *before* the digest, because a period digest reads them back from the archive.
 13. **Labels emails in Outlook** (unless `OUTLOOK_LABELS=off`): every archived inbox email whose `MB:` labels aren't what they should be, up to 400 per run. On the first run that's your whole archive; after that, just the new ones. A failure here only prints a warning. Details: section 5.
 14. **Writes the digest** for the chosen scope (default: the new emails) with `AI_DIGEST_MODEL` (qwen3.8:27b), from the classifications only, never from email bodies. The digest is saved to the archive too, with its scope.
 15. **Prints** one line per email (`[Category/priority] date sender — subject ✓ replied`), then the digest, then timings and where it saved.
-16. With `--send`, delivers the digest. With `--commit`, advances the cursor.
+16. With `--send`, delivers the digest, then the **UPCOMING EVENTS** calendar (built by code from the whole archive: events in the next `EVENTS_DAYS` days, 🆕 for this digest's emails). With `--commit`, advances the cursor.
 
 ### Progress output (what you see while it runs)
 Every phase announces itself on **stderr**, so it never mixes into `--json` output:
@@ -221,6 +224,7 @@ Sends the digest to every active destination in `data/destinations.json` (see `a
 - One failing destination never blocks the others. Each result is printed.
 - If there are no destinations, it says so.
 - If no digest was written (no new mail, or `--backfill` without `--digest`), nothing is sent and that doesn't count as a failure.
+- **After the digest, the UPCOMING EVENTS calendar** goes as its own message (see [`mailbrief events`](#mailbrief-events-the-upcoming-events-calendar)). It's sent only when the digest reached a destination, and if it fails it's reported but never holds back the cursor. `EVENTS_DAYS=0` turns it off.
 
 #### `--commit`
 Marks this run's emails as **processed** by advancing the cursor, so the next `run` won't show them again. It **refuses** in two cases (exit 4 for previews, exit 1 for no delivery):
@@ -313,7 +317,7 @@ Periods are **computed when you view**, from the received date. Files never move
 | `--thread N` | Prints the **whole conversation** of email #N, every message in reply order with its full body, indented by depth. |
 | `--digest` | Prints the digest(s) saved on `--day` (default **today**), each headed with its scope and the time it was written, e.g. `── this month digest, written 17 Oct 09:12 ──`. |
 | `--export FILE` | Writes the listed emails (same filters) to `FILE` as **plain JSON**. ⚠️ Unencrypted: keep it out of the repo. |
-| `--digest --send` | **Resends** the latest digest saved on `--day` (default today) to all destinations, split exactly as `run --send` would. No Outlook and no AI involved, so it's instant. Use it when a send failed or you want a digest again. Exits 1 if there's no saved digest or no destination received it. `--send` without `--digest` is rejected (exit 2). |
+| `--digest --send` | **Resends** the latest digest saved on `--day` (default today) to all destinations, split exactly as `run --send` would, followed by a freshly built UPCOMING EVENTS calendar. No Outlook and no AI involved, so it's instant. Use it when a send failed or you want a digest again. Exits 1 if there's no saved digest or no destination received it. `--send` without `--digest` is rejected (exit 2). |
 
 Numbering is shared: use the **same filters** with `--show`/`--thread` as when you listed:
 ```
@@ -328,6 +332,24 @@ uv run mailbrief emails --search fee --thread 2  # read the whole conversation
 | 0 | OK (also when nothing matches) |
 | 1 | `--show/--thread N` is out of range, or an `.enc` file can't be decrypted. The message names the file: `can't decrypt 2026-10.enc: SESSION_ENCRYPTION_KEY is not the key it was saved with` |
 | 2 | `--day` isn't a valid `YYYY-MM-DD` date |
+
+### `mailbrief events`: the UPCOMING EVENTS calendar
+```
+uv run mailbrief events               # print the next 14 days (EVENTS_DAYS)
+uv run mailbrief events --days 30     # look further ahead
+uv run mailbrief events --send        # send it to all destinations now
+uv run mailbrief events --past 30     # also the last 30 days (past days marked (PAST))
+uv run mailbrief events --past 30 --days 0   # only the last 30 days
+```
+- **Built by code, not AI,** from the `events` the classifier saved for every email: no Outlook, no AI, instant.
+- **Grouped by day** (`FRI 23 OCT`), soonest first. Within a day, ⭐ boosted events (your rules, section 5) come first, then by time.
+- **Each event:** time · name · place, then its one-line detail, then the sign-up deadline ("sign-up closed" once passed) and link.
+- **The same event in two emails** (same name and date) is shown once, with the details of both.
+- **Past events are dropped.** Events with no date only show in the morning message on the day their email arrives (under DATE NOT GIVEN), so `mailbrief events` on its own lists dated events only.
+- **🆕** marks events from the emails the current digest covers (only in the message `run --send` sends).
+- **Older mail has no events** until it's re-classified: `labels retag --period this-month` (section 5).
+- **Past events: `--past N`** adds the last N days, in calendar order, with past days headed like `MON 13 OCT (PAST)`. Past events skip the sign-up line (it would always say "closed") but keep their link. `--days 0` drops the days ahead, so `--past 30 --days 0` is a list of the last month's events; `--send` sends exactly what's printed. Only emails that have events saved show up: older mail needs `labels retag --period …` first.
+- Exit codes: 0 done (or nothing found), 1 the archive can't be read or `--send` reached no destination, 2 `--days` or `--past` isn't 0–365, or `--days 0` without `--past`.
 
 ---
 
@@ -427,7 +449,8 @@ uv run mailbrief labels retag --days 7 --yes
 ```
 - **When:** after adding or changing a **topic** or your **profile**. Those are AI decisions, so older mail only gets them when the AI is asked again. Course and sender rules never need this.
 - **Cost:** about one AI call per email, a few minutes for a month. It asks before starting (`--yes` skips the question).
-- **Images:** emails with image attachments are re-read from Outlook (images are never saved); the rest needs no Outlook at all.
+- **Events too:** the re-classification also lists each email's events, so this is how older mail gets into the UPCOMING EVENTS calendar.
+- **Images:** they're never saved, so they're fetched again: attached and inline ones from Outlook, and linked ones (`REMOTE_IMAGES=on`), which also opens Outlook to read the HTML. With `REMOTE_IMAGES=off` and no image attachments, no Outlook is needed.
 - **Failed calls keep the old classification.** Outlook labels are updated straight after.
 - Needs `--period` or `--days`. Never at the same time as a run (exit 3).
 
@@ -482,12 +505,15 @@ uv run mailbrief rules remove course MA1521                           # old emai
 - **`emails --show N`** shows an email's own labels (`Yours: …`), whether it's boosted, and its `To:` line ("only you" for private mail).
 - **Telegram commands** (`/label add …`) come with the Telegram chat in M7.
 
-#### One-off after upgrading: recipients
-`--direct` needs each email's To/Cc, which older saved emails don't have. Fill them in once:
+#### One-off after upgrading: recipients, image lists and events
+`--direct` needs each email's To/Cc, and the newer image rule (inline posters) needs each email's refreshed image list. Older saved emails have neither. Fill them in once:
 ```
-uv run mailbrief run --backfill
+uv run mailbrief run --backfill                      # right after your morning run
+uv run mailbrief labels retag --period this-month    # optional: events (and topic tags) for this month's mail
 ```
-It re-reads every inbox email with GetItem but **asks the AI only about emails it hasn't classified yet**. It also advances the cursor, so run it **right after your morning run**; otherwise mail that arrived in between is skipped by the next morning digest. New mail always has recipients.
+- `run --backfill` re-reads every inbox email with GetItem but **asks the AI only about emails it hasn't classified yet**. It also advances the cursor, so run it **right after your morning run**; otherwise mail that arrived in between is skipped by the next morning digest.
+- `labels retag` then re-classifies with the AI (about one call per email), which adds events. Pick the period you care about; future events only come from recent mail anyway.
+- New mail always has all of this.
 
 ---
 
@@ -683,6 +709,8 @@ uv run python tests/test_threads.py       # reply ordering, depth, "you replied"
 uv run python tests/test_progress.py      # progress output when piped: quarter counters, ✓/✗ lines, no "\r"
 uv run python tests/test_labels.py        # label names, keeping your categories, pending/cleared selection, request shapes, the write guard
 uv run python tests/test_rules.py         # your own labels: rules.json checks, course/sender/direct matching, topics, floors, boosts
+uv run python tests/test_events.py        # the calendar: 14-day window, undated only when new, merging, ⭐/🆕, layout, per-day splitting
+uv run python tests/test_web_images.py    # linked images: https + public addresses only, no redirects, type/size/budget/tries limits
 uv run python tests/test_service.py       # RUN_AT parsing (and rejecting bad ones), catch-up/due runs, next run, run flags, locks
 ```
 All of them in one go (Git Bash):
@@ -720,6 +748,8 @@ uv add <package>      # updates pyproject.toml + uv.lock and installs it
 | `ARCHIVE_DAYS` | `0` (forever) | If > 0, `run` deletes month files that ended more than this many days ago |
 | `BROWSER_WS_URL` | *(empty)* | Empty = local Chromium. Set it to connect to a Browserless/CDP browser instead |
 | `OUTLOOK_LABELS` | `on` | `off` stops `run` from labelling emails in Outlook (section 5) |
+| `REMOTE_IMAGES` | `on` | `off` stops downloading images linked from email bodies (the senders' image servers see your IP when they're fetched). Events then come from text and attached/inline images only |
+| `EVENTS_DAYS` | `14` | How many days ahead the UPCOMING EVENTS calendar looks; `0` stops `run --send` from sending it |
 | `RUN_AT` | `daily 07:30` | When `serve` runs, and which digest each time (format in section 7) |
 
 Listed in `.env.example` but **not used by the code yet** (planned for later milestones): `FALLBACK_AGENT`, `DATABASE_URL`, `RESTORE_UNREAD` (`SORT_MODE` is replaced by `OUTLOOK_LABELS`; a "move to folders" mode is M6).
@@ -845,4 +875,6 @@ uv run mailbrief login
 | `stop` / `status` | done | (n/a) | (n/a) |
 | `autostart` | done | Task Scheduler refused | not Windows |
 | `emails` | success | bad number / can't decrypt | bad `--day` |
+| `events` | done / nothing found | archive unreadable / not delivered | bad `--days` / `--past` |
+| `rules` | done | rule not found / rules.json unreadable | bad rule |
 | `add-destination` | added | no chats / bad choice | unknown type |

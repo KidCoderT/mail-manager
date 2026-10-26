@@ -61,7 +61,7 @@ def _items(emails: list[dict], results: list[dict], your_rules: dict) -> list[di
 
     def ruled(e: dict, c: dict) -> dict:
         eff = rules.effective({**e, "classification": c}, your_rules)
-        out = {k: v for k, v in c.items() if k not in ("model", "tags", "boost")}
+        out = {k: v for k, v in c.items() if k not in ("model", "tags", "boost", "events")}
         out["priority"] = eff["priority"]
         if eff["labels"]:
             out["labels"] = [n.removeprefix("MB: ") for n in eff["labels"]]

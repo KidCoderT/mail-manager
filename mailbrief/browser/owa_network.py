@@ -152,7 +152,11 @@ def _clean(text: str) -> str:
 
 
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp")
-IMAGE_MIN, IMAGE_MAX, IMAGES_PER_EMAIL = 15_000, 5_000_000, 3
+IMAGE_MIN = 15_000     # attached images smaller than this are icons
+INLINE_MIN = 30_000    # inline images (in the body): signature logos are smaller, posters are hundreds of KB
+IMAGE_MAX = 5_000_000  # ponytail: bigger posters are skipped, not resized (resizing needs Pillow)
+IMAGES_PER_EMAIL = 5
+IMAGE_BUDGET = 8_000_000  # bytes of images per email, attachments and linked images together
 
 
 def addresses(recipients: list | None) -> list[str]:
@@ -167,14 +171,55 @@ def addresses(recipients: list | None) -> list[str]:
 
 
 def image_attachments(attachments: list) -> list[dict]:
-    """Image attachments worth showing the vision model: real images, not inline signature logos."""
-    keep = []
+    """Image attachments worth showing the vision model: attached images, and inline ones big enough to be
+    posters rather than signature logos. In order, within IMAGES_PER_EMAIL and IMAGE_BUDGET."""
+    keep, used = [], 0
     for a in attachments or []:
         name, ctype, size = a.get("Name") or "", a.get("ContentType") or "", a.get("Size") or 0
         is_image = ctype.startswith("image/") or name.lower().endswith(IMAGE_EXTS)
-        if is_image and not a.get("IsInline") and IMAGE_MIN <= size <= IMAGE_MAX and _id(a.get("AttachmentId")):
+        low = INLINE_MIN if a.get("IsInline") else IMAGE_MIN
+        if is_image and low <= size <= IMAGE_MAX and used + size <= IMAGE_BUDGET and _id(a.get("AttachmentId")):
             keep.append({"id": _id(a["AttachmentId"]), "name": name, "content_type": ctype, "size": size})
-    return keep[:IMAGES_PER_EMAIL]
+            used += size
+            if len(keep) == IMAGES_PER_EMAIL:
+                break
+    return keep
+
+
+_SKIP_IMAGE = re.compile(r"logo|icon|avatar|facebook|instagram|linkedin|twitter|tiktok|youtube|whatsapp|telegram|"
+                         r"spacer|pixel|track|beacon|/open\.|badge|signature|social", re.I)
+
+
+def image_urls(html: str) -> list[str]:
+    """Linked images in an HTML body worth downloading: https, no query string (tracking images usually carry one),
+    not obviously an icon or logo by name. In page order, de-duplicated.
+    ponytail: name heuristics; web_images' size check catches the icons they miss."""
+    urls = []
+    for src in re.findall(r"<img\b[^>]*?\bsrc\s*=\s*[\"']([^\"']+)[\"']", html or "", re.I):
+        src = src.strip().replace("&amp;", "&")
+        if src.lower().startswith("https://") and "?" not in src and not _SKIP_IMAGE.search(src) and src not in urls:
+            urls.append(src)
+    return urls
+
+
+def html_getitem_body(header: dict, ids: list[str]) -> dict:
+    """Read-only GetItem for just the HTML body, to find linked images (the HTML is never kept)."""
+    body = getitem_body(header, ids)
+    shape = body["Body"]["ItemShape"]
+    shape["BodyType"] = "HTML"
+    shape["AdditionalProperties"] = [{"__type": "PropertyUri:#Exchange", "FieldURI": "Body"}]
+    return body
+
+
+def html_bodies(response: dict) -> dict[str, str]:
+    """{email id: HTML body} from an html_getitem_body response."""
+    out = {}
+    for msg in (response.get("Body") or {}).get("ResponseMessages", {}).get("Items", []):
+        if msg.get("ResponseClass") == "Success":
+            for it in msg.get("Items", []):
+                if _id(it.get("ItemId")):
+                    out[_id(it["ItemId"])] = (it.get("Body") or {}).get("Value") or ""
+    return out
 
 
 def parse_items(response: dict) -> list[dict]:

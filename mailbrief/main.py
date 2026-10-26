@@ -45,7 +45,7 @@ def run(
     from mailbrief.ai.classifier import classify
     from mailbrief.ai.digest import digest
     from mailbrief.browser.connect import get_browser
-    from mailbrief.browser.outlook_reader import fetch_emails, fetch_images, read_inbox
+    from mailbrief.browser.outlook_reader import collect_images, fetch_emails, read_inbox
     from mailbrief.session import manager
 
     show_all = show_all or backfill
@@ -101,11 +101,8 @@ def run(
                 key=lambda r: r["received_at"],
             )
             todo = [e for e in targets if _needs_ai(archived.get(e["id"]))]
-            with_images = [e for e in todo if e.get("image_attachments")]
-            images = {e["id"]: [] for e in todo}
-            for n, e in enumerate(with_images, 1):
-                images[e["id"]] = fetch_images(page, result["auth"], e)  # memory only
-                progress.count("Fetching images", n, len(with_images))
+            images = collect_images(page, result["auth"], todo)  # memory only
+            with_images = [e for e in todo if images[e["id"]]]
             manager.save(
                 context, session["user_agent"]
             )  # Microsoft rotates auth cookies
@@ -205,6 +202,7 @@ def run(
                     "one_line_summary": e["subject"],
                     "action_items": [],
                     "deadline": None,
+                    "events": [],
                     "model": None,
                 }
         return by_conv[cid]
@@ -250,7 +248,7 @@ def run(
             log
         )  # MB: labels in Outlook for whatever is pending; never fails the run
 
-    text, t_digest = None, 0.0
+    text, t_digest, digest_emails = None, 0.0, []
     if scope:
         digest_emails = digest_set(scope, targets, cursor, tz, log)
         if digest_emails:
@@ -293,8 +291,14 @@ def run(
                 f"  [{c['category']}/p{c.get('priority')}] {e['received_at'].astimezone(tz):%d %b %H:%M}  "
                 f"{e['sender_name'] or e['sender_email']} — {e['subject']}{done_tag}"
             )
+    # The UPCOMING EVENTS calendar goes with every digest: built by code from the saved archive (no AI).
+    from mailbrief import events
+
+    events_text = events.build(datetime.now(tz).date(), [e["id"] for e in digest_emails], log) if text else None
     if text and not quiet:
         print(f"\n{text}\n", file=log)
+        if events_text:
+            print(f"{events_text}\n", file=log)
     unclassified = sum(r["category"] == "Unclassified" for r in results)
     print(
         f"timing: read {t_read:.0f}s, classify {t_classify:.0f}s ({len(todo)} emails, {len(with_images)} with images)"
@@ -308,6 +312,8 @@ def run(
     if send and text:
         progress.step("Sending the digest…")
     delivered = deliver(text, log) if send and text else True
+    if send and text and delivered and events_text:
+        deliver(events_text, log)  # a failure is reported, but never holds back the cursor
     if commit or backfill:
         if not delivered:
             print(
@@ -426,8 +432,15 @@ def show_emails(period, day, search, show, thread, digest, export, send=False) -
         if not found:
             print(f"No digest saved for {want}.")
             return 1 if send else 0
-        if send:  # resend the latest one: no Outlook, no AI
-            return 0 if deliver(found[-1]["text"], sys.stdout) else 1
+        if send:  # resend the latest one, then today's events calendar: no Outlook, no AI
+            if not deliver(found[-1]["text"], sys.stdout):
+                return 1
+            from mailbrief import events
+
+            events_text = events.build(today, (), sys.stdout)
+            if events_text:
+                deliver(events_text, sys.stdout)
+            return 0
         return 0
 
     emails = all_emails
@@ -514,6 +527,11 @@ def show_emails(period, day, search, show, thread, digest, export, send=False) -
             print(f"  • {item}")
         if c.get("deadline"):
             print(f"Deadline: {c['deadline']}")
+        for ev in c.get("events") or []:
+            when = " ".join(x for x in (ev.get("date"), ev.get("time")) if x) or "date not given"
+            print(f"Event:    {when} · {ev['name']}" + (f" · {ev['place']}" if ev.get("place") else ""))
+            if ev.get("detail"):
+                print(f"          {ev['detail']}")
         if len(full_thread) > 1:
             print(
                 f"\nThread ({len(full_thread)} messages; open all with --thread {pick}):"
@@ -745,17 +763,15 @@ def _retag(args, emails: list[dict], today, tz) -> int:
         return 1
 
     def work() -> str:
+        from mailbrief import web_images
+
         images = {e["id"]: [] for e in targets}
-        with_images = [e for e in targets if e.get("image_attachments")]
-        if (
-            with_images
-        ):  # images live only in Outlook (never saved), so fetch them again
-            from mailbrief.browser.outlook_reader import fetch_images
+        # Images are never saved, so they're fetched again; linked ones need the HTML from Outlook too.
+        if web_images.enabled() or any(e.get("image_attachments") for e in targets):
+            from mailbrief.browser.outlook_reader import collect_images
 
             with labels.outlook() as (page, auth, _startup):
-                for n, e in enumerate(with_images, 1):
-                    images[e["id"]] = fetch_images(page, auth, e)
-                    progress.count("Fetching images", n, len(with_images))
+                images = collect_images(page, auth, targets)
         thread_map = threads.group(emails)
         changes, done = {}, 0
 
@@ -889,6 +905,38 @@ def rules_command(args) -> int:
         print(e)
         return 2
     print(f"{msg}\n{tail}")
+    return 0
+
+
+def events_command(days: int | None, send: bool, past: int = 0) -> int:
+    """`mailbrief events [--days N] [--past N] [--send]`: the events calendar, from the saved archive."""
+    from mailbrief import archive, events, rules
+
+    if not 0 <= past <= 365 or (days is not None and not 0 <= days <= 365):
+        print("--days and --past must be 0-365")
+        return 2
+    if days == 0 and not past:
+        print("--days 0 shows nothing ahead; add --past N to see past events")
+        return 2
+    window = days if days is not None else (events.days() or events.DEFAULT_DAYS)
+    today = datetime.now(_tz()).date()
+    try:
+        try:
+            your_rules = rules.load()
+        except rules.RulesError:
+            your_rules = rules.empty()
+        found = events.upcoming(archive.load()[0], today, window, (), your_rules, past)
+        text = events.render(found, today, window, past)
+    except archive.ArchiveError as e:
+        print(e)
+        return 1
+    if not text:
+        span = " or ".join(x for x in (f"the last {past} days" if past else "", f"the next {window} days" if window else "") if x)
+        print(f"No events in {span}.")
+        return 0
+    if send:
+        return 0 if deliver(text, sys.stdout) else 1
+    print(text)
     return 0
 
 
@@ -1118,6 +1166,10 @@ def main() -> None:
         help='set who you are and what you want, e.g. "Year 2 CS student looking for internships"',
     )
     prof_p.add_argument("text", help='your profile ("" clears it)')
+    ev_p = sub.add_parser("events", help="upcoming events found in your saved emails (no Outlook, no AI)")
+    ev_p.add_argument("--days", type=int, metavar="N", help="how far ahead (default EVENTS_DAYS, 14; 0 = none, with --past)")
+    ev_p.add_argument("--past", type=int, default=0, metavar="N", help="also show events from the last N days")
+    ev_p.add_argument("--send", action="store_true", help="send it to all destinations instead of just printing")
     serve_p = sub.add_parser(
         "serve",
         help="run forever, firing runs on the RUN_AT schedule (Ctrl+C or `stop` to end)",
@@ -1167,6 +1219,8 @@ def main() -> None:
         sys.exit(labels_command(args))
     if args.command == "rules":
         sys.exit(rules_command(args))
+    if args.command == "events":
+        sys.exit(events_command(args.days, args.send, args.past))
     if args.command in ("serve", "stop", "status", "autostart"):
         from mailbrief import service
 

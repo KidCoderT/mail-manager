@@ -1,6 +1,6 @@
 # MailBrief — AI Morning Email Digest (Outlook)
 
-> **Status:** v1 works end to end (M1–M5 ✅: reading, AI classification and digests, Outlook labels, scheduled service), plus **your own labels** (M6a ✅, §3.8). **Being designed:** reading newsletter images and events (M6b, §3.10) and chatting with your inbox in Telegram (M7, §3.9).
+> **Status:** v1 works end to end (M1–M5 ✅: reading, AI classification and digests, Outlook labels, scheduled service), plus **your own labels** (M6a ✅, §3.8) and **newsletter images & an UPCOMING EVENTS calendar** (M6b ✅, §3.10). **Being designed:** chatting with your inbox in Telegram (M7, §3.9).
 > **Scope:** one person's Outlook on the web (Microsoft 365), Playwright driving a **local Chromium**, Telegram delivery (more channels pluggable). [Browserless](https://www.browserless.io) is an optional later runtime. **Single-user only:** multi-user hosting is cancelled (§13).
 
 > ⚠️ **Disclaimer:**
@@ -159,10 +159,9 @@ These were picked by testing every candidate on the endpoint with made-up emails
 - qwen3.5:9b ran out of tokens while thinking.
 - llama3.1:8b can't take images (HTTP 400) and got about half the categories right.
 
-**Images:** non-inline image attachments between 15 KB and 5 MB (up to 3 per email) are fetched through `GetAttachment` and sent to the vision model. They're kept in memory only. Signature logos are inline and skipped.
-- **Today's limit:** images embedded in the body (inline) are skipped too. Images loaded from links aren't fetched at all, because the body is read as plain text.
-- So a newsletter's event poster rarely reaches the model. When one does, only one summary line and one deadline survive.
-- M6b fixes this (§3.10).
+**Images** (M6b, details in §3.10) go to the vision model, kept in memory only and never saved. Up to 5 per email and 8 MB in total:
+- **attached images** of 15 KB–5 MB, and **inline** ones (in the body) of 30 KB–5 MB, through `GetAttachment`. Signature logos are smaller and skipped;
+- **linked images** that newsletters load from the web (`REMOTE_IMAGES=on`): found in the HTML body and downloaded with safety checks.
 
 **Untrusted input:** the email goes inside `<email>` delimiters, marked as data rather than instructions. The digest only sees Pass 1 results, never email bodies.
 
@@ -366,8 +365,13 @@ MailBrief:  Saturday 7 Nov, 10:00–11:30, in MPSH 2 [1]. You may bring one
 
 ---
 
-### 3.10 Newsletter images & events (M6b, planned)
-A newsletter announcing five events becomes "newsletter with upcoming events" today, with one date at most (§3.3). M6b keeps every event. It doesn't depend on the label rules (M6a); only the ⭐ for boosted topics uses them once they exist.
+### 3.10 Newsletter images & events ✅ (M6b: `events.py`, `web_images.py`)
+Before M6b, a newsletter announcing five events became "newsletter with upcoming events", with one date at most. Now every event is kept, and a daily calendar message lists them.
+
+**What a structure-only check of real mail showed** (counts and flags only, no content read):
+- **Mass newsletters** (sent with mailing tools such as Mailchimp) usually have **no attachments**. They load their images, often a dozen or more, from web links.
+- **Emails written by people** often paste posters in **inline**, hundreds of KB to several MB each. Inline signature images are much smaller, under about 20 KB.
+- So both kinds have to be read: linked images for the first, inline ones for the second.
 
 - **An `events` list per email.** The classifier also returns
   `[{name, detail, date "YYYY-MM-DD" or null, time, place, link, signup_deadline}]`, and it is empty for most mail.
@@ -375,30 +379,43 @@ A newsletter announcing five events becomes "newsletter with upcoming events" to
   - Events are checked in code like the other fields: bad dates become null, events without a name are dropped, and there are at most about 10 per email.
   - `one_line_summary` and `deadline` (the single most urgent date) stay as they are.
 - **Why a list and not a longer summary.** A longer summary for every email costs tokens on mail with nothing to say. It also hits the digest's 2,500-character limit anyway, and dates written as sentences can't be sorted or filtered. A list can. A second "short version" summary can come later, only for P1–P2 mail, if the digest still feels thin.
-- **Inline images are read.**
-  - Inline image attachments of **15 KB or more** go to the vision model too, up to about 5 per email (today it's 3, non-inline only).
-  - Logos and signature icons are smaller and stay skipped. `ponytail:` the size threshold is a heuristic; a per-sender skip list is the upgrade if logos still slip through.
-  - To verify first: that OWA lists inline images in `Attachments` with `IsInline` set, on a real newsletter.
-- **Linked images: opt-in, off by default** (`REMOTE_IMAGES=off`).
-  - Loading them tells the sender you opened the mail, the same as a tracking pixel.
-  - It would also need the HTML body, not just plain text.
-  - When on: image URLs are taken from the HTML body and size-checked (at most about 5), then downloaded over plain HTTP, never through the Outlook session.
-- **An UPCOMING EVENTS message.**
-  - **Code, not AI, builds it,** and it goes out as a second Telegram message after the digest. Nothing is rewritten or made up, and the digest's 2,500-character limit isn't touched.
-  - **Sorted** by date. Past events are dropped, and duplicates (the same name and date in two emails) are merged.
-  - **Boosted topics** (your M6a rules, once built) are marked ⭐ and listed first.
-  - The AI digest still mentions upcoming sign-up deadlines under DEADLINES & MEETINGS.
+- **Inline images are read.** Inline attachments of **30 KB or more** go to the vision model (attached ones from 15 KB, as before). Signature logos are smaller. Confirmed: Outlook lists inline images in `Attachments` with `IsInline` set.
+- **Limits per email:** at most **5 images** and **8 MB** in total, each at most 5 MB. Checked on the endpoint with synthetic images: 7.9 MB in one request is accepted. `ponytail:` bigger posters are skipped, not resized (that needs Pillow).
+- **Linked images: on by default** (`REMOTE_IMAGES=on`), with safeguards:
+  - A read-only GetItem fetches the **HTML** body of the emails being classified. Image URLs are taken from it and the HTML is dropped.
+  - **Skipped by URL:** anything that isn't `https`, URLs with a query string (tracking images usually carry one), and names that look like icons or logos (facebook, logo, avatar, spacer, pixel…).
+  - **Downloads are guarded:** the host is resolved first, and refused if any address is on a private, loopback or link-local network. Redirects aren't followed. There's a 10 s timeout, no cookies and no Outlook session, and at most 12 tries per email.
+  - **Kept only if** it's a real image type (png/jpeg/webp/gif) and at least 15 KB, which drops leftover icons and pixels.
+  - **The privacy trade-off:** the senders' image servers see your IP address and when MailBrief read the mail, often before you open it. `REMOTE_IMAGES=off` stops this; events then come from the text and inline images only.
+  - Measured on one week of real mail: 16 images (8.4 MB) for 5 newsletters, about 12 s added to the run.
+- **An UPCOMING EVENTS message: a rolling 14-day calendar.**
+  - **Code, not AI, builds it,** and it goes out as a second Telegram message after every digest. Nothing is rewritten or made up, and the digest's 2,500-character limit isn't touched. The digest model doesn't see events at all; `deadline` still feeds DEADLINES & MEETINGS.
+  - **From all saved mail**, not just today's: every event in the next `EVENTS_DAYS` days (default 14; `0` turns it off). 🆕 marks events from this digest's emails.
+  - **Grouped by day**, with ⭐ boosted events (your rules, §3.8) first within each day, then by time. Past events are dropped, and the same event in two emails (same name and date) is merged into one.
+  - **Undated events** appear only on the day their email arrives, under DATE NOT GIVEN, so they don't repeat forever.
+  - A passed sign-up deadline shows as "sign-up closed".
+  - Long calendars split per day in Telegram (day headings work like digest sections).
+  - **Any time:** `mailbrief events [--days N] [--send]` prints or sends it, with no Outlook and no AI. `--past 30` adds the last 30 days (`--days 0` for past only). `emails --digest --send` resends it with the digest.
 
   ```
-  📅 UPCOMING EVENTS
-  ⭐ Thu 23 Oct 7pm · Google SWE talk · COM3 LT19
+  📅 UPCOMING EVENTS · next 14 days (3)
+
+  FRI 23 OCT
+  ⭐🆕 7pm · Google SWE talk · COM3 LT19
      Talk + resume review for interns, free pizza
-     sign up by Wed 22 Oct · https://…
-  • Sat 25 Oct 10am · Hack&Roll info session · Zoom
-     Team formation and prize tracks for Hack&Roll 2027
+     sign up by Thu 22 Oct · https://…
+
+  SUN 25 OCT
+  • 10am · Hack&Roll info session · Zoom
+     Team formation and prize tracks
+
+  DATE NOT GIVEN
+  🆕 CS Career Fair volunteer call
   ```
 - **Saved.** Each email's `events` go in the archive beside its classification, as text only (images are never stored). M7 chat answers "what's on this week?" from them (§3.9).
-- **Cost.** More emails go through the vision model, at about 1.7 s each. A newsletter-heavy day takes longer, but still minutes.
+- **Cost.** More emails go through the vision model, at about 1.7 s each, plus the image downloads. A newsletter-heavy day takes longer, but still minutes.
+- **Checked on made-up emails** (no real mail): the 12 benchmark categories still score 12/12 with the events field in the prompt, and 6 of 6 events in two made-up newsletters came back with the right dates, times, places and links.
+- **Older mail:** `mailbrief run --backfill` (right after a morning run) refreshes each email's image list with the new inline rule, with no AI. Then `mailbrief labels retag --period this-month` re-classifies, which fills in events.
 
 ## 4. Data Model
 
@@ -414,7 +431,7 @@ There is no database: one user's data fits in a few small files in `data/` (git-
 | `rules.json` | Your own labels: profile, courses, senders, topics (§3.8) | No (rules only, no email content) |
 | `index.enc` *(M7)* | Search vectors for chat (§3.9); rebuildable from the archive | Yes |
 
-Per email, the archive stores the `EmailRecord` plus `classification`, `replied`, `thread_size`, and `outlook_labels` / `labels_cleared` / `outlook_gone` (§3.4). M6a added `tags` and `boost` (inside `classification`), and `to` / `cc` / `direct` (recipients); M6b adds `events` (inside `classification`, §3.10).
+Per email, the archive stores the `EmailRecord` plus `classification`, `replied`, `thread_size`, and `outlook_labels` / `labels_cleared` / `outlook_gone` (§3.4). M6a added `tags` and `boost` (inside `classification`), and `to` / `cc` / `direct` (recipients); M6b added `events` (inside `classification`, §3.10).
 
 `ponytail:` JSON files are right for one person. A database would only be needed for many users, which is cancelled (§13).
 
@@ -468,7 +485,7 @@ mail-manager/
 ├── pyproject.toml, uv.lock, .env.example
 ├── Dockerfile, compose.yaml, .dockerignore   # always-on `serve` on your own server
 ├── mailbrief/
-│   ├── main.py                 # CLI: login, run, emails, labels, add-destination, serve/stop/status/autostart
+│   ├── main.py                 # CLI: login, run, emails, labels, rules, events, add-destination, serve/stop/status/autostart
 │   ├── service.py              # the schedule, locks, child runs, autostart
 │   ├── archive.py              # encrypted monthly email archive, periods
 │   ├── cursor.py               # which emails are new
@@ -477,6 +494,8 @@ mail-manager/
 │   ├── destinations.py         # Telegram chats to deliver to
 │   ├── progress.py             # live progress lines (stderr)
 │   ├── rules.py                # your own labels: load/check rules.json, course/sender matching, floors, boosts
+│   ├── events.py               # the UPCOMING EVENTS calendar, built by code from saved events
+│   ├── web_images.py           # linked images in emails: guarded downloads for the vision model
 │   ├── index.py                # (M7) embeddings + flat vector search over the archive
 │   ├── session/
 │   │   ├── login_once.py       # the one-time visible login
@@ -488,7 +507,7 @@ mail-manager/
 │   │   └── outlook_writer.py   # the only code that changes Outlook: MB: categories
 │   ├── ai/
 │   │   ├── client.py           # complete(): any OpenAI-compatible endpoint (stdlib urllib)
-│   │   ├── classifier.py       # Pass 1: one email → category, priority, summary, your topic tags + boost (+ M6b events)
+│   │   ├── classifier.py       # Pass 1: one email → category, priority, summary, your topic tags + boost, events
 │   │   ├── digest.py           # Pass 2: the digest
 │   │   └── answer.py           # (M7) question → search → cited answer
 │   ├── notify/
@@ -528,8 +547,11 @@ OUTLOOK_LABELS=on
 RESTORE_UNREAD=true             # DOM fallback only
 ARCHIVE_DAYS=0                  # 0 = keep saved emails forever; N = drop months older than N days
 
-# Planned (M6b): download images linked from email bodies (tells senders you opened the mail; §3.10)
-REMOTE_IMAGES=off
+# Images linked from email bodies (newsletters): downloaded for the AI, with safety checks.
+# The senders' image servers see your IP and when the mail was read; off = text + attached/inline images only (§3.10)
+REMOTE_IMAGES=on
+# UPCOMING EVENTS message after each digest: how many days ahead (0 = don't send it)
+EVENTS_DAYS=14
 
 # Planned (M7): chat with your inbox (§3.9)
 CHAT=on                         # off = the bot stays send-only
@@ -545,11 +567,11 @@ AI_ANSWER_MODEL=qwen3.8:27b     # writes the cited answers
 2. Session Manager decrypts the session and gets a headless browser (local by default).
 3. **Session check.** If expired, send a re-login alert (once a day) and stop.
 4. Inbox Reader collects emails newer than the cursor through Outlook's own network calls, with list previews as the fallback. The refreshed session is re-saved.
-5. AI Processor runs Pass 1: classify each new email, with your profile, tagging your topics (M6b: also list events). Your course and sender rules are applied in code.
+5. AI Processor runs Pass 1: classify each new email, with your profile, tagging your topics and listing its events (from text and images). Your course and sender rules are applied in code.
 6. The emails are saved to the archive. From M7 the new ones are added to the search index.
 7. Sorter applies the `MB:` labels in Outlook.
 8. Pass 2 writes the digest.
-9. Notifier sends the digest to all active destinations.
+9. Notifier sends the digest to all active destinations, then the UPCOMING EVENTS calendar (built by code from the archive).
 10. The cursor advances, only if the digest was delivered.
 11. The run is logged: progress, counts and results, never email content.
 
@@ -568,6 +590,7 @@ AI_ANSWER_MODEL=qwen3.8:27b     # writes the cited answers
 | Email text for classification/digest | `AI_BASE_URL` | Use your company's model to keep it in-house |
 | Digest text (summaries only) | Telegram | Not end-to-end encrypted; summary-level only |
 | Chat answers with quotes, and attachments you ask for *(M7)* | Telegram | Not end-to-end encrypted; more than summary level. `CHAT=off` turns it off |
+| Image downloads (linked images in emails) | The senders' image servers | They see your IP address and when MailBrief read the mail. `REMOTE_IMAGES=off` stops it |
 | Text for search vectors *(M7)* | `AI_BASE_URL` (`bge-m3`) | Same in-house endpoint as classification |
 | Everything the browser sees | Browserless | **Only if** `BROWSER_WS_URL` is set. Self-hosted stays local; cloud is a third party |
 
@@ -624,7 +647,9 @@ Steps: [commands.md §7 "Hosting"](commands.md#7-running-automatically). This is
 | An email steers a chat answer (M7) | Answer model has no tools; replies only to you; suggested files checked against cited emails; sources always shown so you can check |
 | Chat answers from stale data (M7) | Index updated every run; `/sync` runs now; sources show each email's date |
 | Too many custom labels clutter Outlook (M6a) | Labels only from your own rules; old courses removable with `labels clear --label` (or `--everywhere`); all share the `MB: ` prefix for filtering |
-| Logos read as event posters, or an event missed (M6b) | 15 KB size threshold (per-sender skip list later); the email's text is still read; events checked in code |
+| Logos read as event posters, or an event missed (M6b) | 30 KB inline / 15 KB attached thresholds; icon-like URLs skipped; the email's text is still read; events checked in code |
+| A malicious image link in an email (M6b) | https only; private/loopback/link-local addresses refused after resolving; no redirects; size, type and time limits; images never saved |
+| Image-heavy days are slow (M6b) | 5 images / 8 MB per email; 12 URL tries per email; `REMOTE_IMAGES=off` |
 | AI tags a topic wrongly (M6a) | Tags validated against your list; topic descriptions in the prompt; `labels retag` after editing a description |
 
 ---
@@ -653,7 +678,7 @@ Steps: [commands.md §7 "Hosting"](commands.md#7-running-automatically). This is
 | **M4** ✅ | Outlook labels: `MB: <category>` + `MB: P<priority>`, coloured, applied every run, `labels status/apply/clear`, code-enforced write guard. (Re-login alert done in M5.) |
 | **M5** ✅ | Scheduler (`serve`, extensible `RUN_AT`, catch-up, retries), `stop` / `status`, Windows autostart, run lock, run logs, login-expired Telegram alert, Docker hosting files. (CLI-only destinations, multiple destinations already done; bot lockdown = `/setjoingroups` in @BotFather) |
 | **M6a** ✅ | Your own labels (§3.8): `rules.json`; profile, courses, senders (direct-only), AI topics with priority floors; To/Cc recipients + archive re-fetch; boosts + OPPORTUNITIES & EVENTS digest section; `mailbrief rules`, `labels retag`, `labels clear --label [--everywhere]`. (Telegram `/label` commands: M7) |
-| **M6b** | Newsletter images & events (§3.10): inline images to the vision model (≥15 KB, up to ~5); `events` list with one-line `detail`; code-built UPCOMING EVENTS message; linked images opt-in (`REMOTE_IMAGES`) |
+| **M6b** ✅ | Newsletter images & events (§3.10): inline images (≥30 KB) and guarded linked-image downloads (`REMOTE_IMAGES=on`), 5 images / 8 MB per email; `events` list with one-line `detail`; code-built rolling 14-day UPCOMING EVENTS calendar (`EVENTS_DAYS`), `mailbrief events` |
 | **M7** | Ask your inbox (§3.9): `bge-m3` index, allowlisted Telegram listener in `serve`, cited answers, attachment buttons, `/label` and `/profile` commands, `/sync`, `mailbrief chat` |
 | **M8** | Optional AI fallback agent behind a code-enforced blocklist, failure screenshots, move mode |
 | **Later** | Attachment text (PDF/Office) in the index, voice questions (`whisper-large-v3`), Browserless (Docker, then cloud), WhatsApp/Slack/Email/Teams adapters, Gmail support, web dashboard |

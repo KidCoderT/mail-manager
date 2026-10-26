@@ -31,6 +31,8 @@ Read it top to bottom once. After that, each section stands on its own as a refe
    - 7.15 [`service.py`](#715-servicepy): running on its own (schedule, stop, autostart, hosting)
    - 7.16 [`labels.py` and `outlook_writer.py`](#716-labelspy-and-outlook_writerpy): MB: labels in Outlook, the one write
    - 7.17 [`rules.py`](#717-rulespy): your own labels (courses, professors, topics, profile)
+   - 7.18 [`events.py`](#718-eventspy): the UPCOMING EVENTS calendar
+   - 7.19 [`web_images.py`](#719-web_imagespy): linked images, downloaded safely
 8. [The full run, end to end](#8-the-full-run-end-to-end)
 9. [Failure handling: what can go wrong and what happens](#9-failure-handling)
 10. [Security model](#10-security-model)
@@ -148,6 +150,8 @@ mail-manager/
 │   ├── destinations.py     the list of Telegram chats
 │   ├── labels.py           which emails need which MB: labels; apply / clear / status
 │   ├── rules.py            your own labels: load/check rules.json, match courses and senders in code
+│   ├── events.py           the UPCOMING EVENTS calendar, built by code from saved events
+│   ├── web_images.py       linked images in emails: guarded downloads for the vision model
 │   └── notify/telegram.py  sending to Telegram
 └── tests/                  one small test script per module
 ```
@@ -262,6 +266,8 @@ classification:
   deadline          YYYY-MM-DD or null
   tags              your topic names that fit (only names from rules.json survive)
   boost             does it fit your profile as an opportunity/event? (true/false)
+  events            every event it announces: [{name, detail (one line), date, time, place, link,
+                    signup_deadline}], [] for most mail; checked by validate_events
   model             which model produced it
 ```
 
@@ -437,6 +443,18 @@ return them                      (kept in memory only, never written to disk)
 ```
 If anything fails, the email is simply classified without its images. Images are a bonus, not a requirement.
 
+#### `fetch_image_urls(page, auth, emails)` and `collect_images(page, auth, emails)`
+Newsletters rarely attach their posters: they load them from the web, and the plain-text body MailBrief reads has no trace of them. So:
+```
+fetch_image_urls:  read-only GetItem with BodyType HTML (Body only), 20 at a time
+                   → image_urls(html) per email; the HTML is dropped right there
+collect_images:    for each email being classified:
+                       attached + inline images first (fetch_images)
+                       then, if REMOTE_IMAGES is on, linked ones (web_images.download)
+                         to fill what's left of 5 images / 8 MB
+```
+It runs for the emails that need the AI only, inside the same browser session as the rest of the read. A failed HTML read just means no linked images this time.
+
 #### `_service_call(page, auth, action, make_body)`
 ```
 if no auth was captured → nothing
@@ -504,11 +522,21 @@ for each response message:
 ```
 keep an attachment if:
     it's an image (content type image/*, or a .png/.jpg/.jpeg/.gif/.webp name)
-    AND it's NOT inline                  (inline images are signature logos & icons)
-    AND 15 KB ≤ size ≤ 5 MB              (smaller = tracking pixels/icons; larger = too heavy)
-take at most 3
+    AND size ≥ 30 KB if inline, ≥ 15 KB if attached     (signature logos and icons are smaller)
+    AND size ≤ 5 MB
+    AND it still fits the 8 MB budget for this email
+stop at 5
 ```
-**Why so picky?** Every image costs AI time. Logos and pixels add nothing but cost.
+**Why these numbers?** A structure-only look at real mail (sizes and flags, no content) found inline signature images under about 20 KB and inline posters of hundreds of KB and more, so 30 KB separates them with room to spare. Before M6b every inline image was skipped, which threw away the posters staff emails embed. The endpoint accepted 7.9 MB of synthetic images in one request, so 8 MB per email is safe. Posters over 5 MB are skipped rather than resized, because resizing needs an image library (Pillow). Every image costs AI time, so logos and pixels are worth keeping out.
+
+#### `image_urls(html)`
+```
+every <img src="…"> in page order, de-duplicated, kept only if:
+    it starts with https://
+    AND it has no query string            (tracking images usually carry one: open.gif?u=123)
+    AND its name doesn't look like an icon (logo, icon, avatar, facebook, spacer, pixel, track…)
+```
+Name rules are a cheap first filter. Whatever slips through is caught by the size check in `web_images`.
 
 #### `preview_records(conversations)`
 The fallback: one record per conversation, with the list preview as the body and `body_source = "preview"` so later code knows it isn't full text.
@@ -1202,7 +1230,58 @@ So adding a course needs no special "re-apply" step. The next run (or `labels ap
 - **Topics on older mail** need the AI again: `labels retag` re-classifies a period with your current rules, keeping the old answer when a call fails.
 
 #### Recipients
-`direct` needs To/Cc, so `GetItem` now asks for `ToRecipients` and `CcRecipients`. `fetch_emails`, which already knows your address for `from_me`, sets `direct = (to == [you])`. Checked on the real mailbox: a feedback request and a graded-midterm email were direct, while a faculty newsletter (To: a student list) and a fee reminder (To: two of your addresses) were not. A known limit: **mail merges** (e.g. individually sent grade emails) are also "only you", so `--direct` is paired with a sender match, never used alone. Old archive entries get recipients from a one-off `run --backfill`: it re-fetches records with GetItem, and since their classifications are reused, no AI is called.
+`direct` needs To/Cc, so `GetItem` now asks for `ToRecipients` and `CcRecipients`. `fetch_emails`, which already knows your address for `from_me`, sets `direct = (to == [you])`. Checked on the real mailbox (structure only): a one-to-one email was direct, while a newsletter to a student list and an email sent to two of your addresses were not. A known limit: **mail merges** (e.g. individually sent grade emails) are also "only you", so `--direct` is paired with a sender match, never used alone. Old archive entries get recipients from a one-off `run --backfill`: it re-fetches records with GetItem, and since their classifications are reused, no AI is called.
+
+### 7.18 `events.py`
+The UPCOMING EVENTS message: a rolling calendar of the next `EVENTS_DAYS` days (default 14), sent after each digest.
+
+#### Why code builds it, not the AI
+The classifier already did the judgement: it listed each email's events with real dates (`validate_events` threw out bad ones). What's left is sorting, filtering and layout, which code does exactly and for free. An AI asked to "list upcoming events" could drop one, invent one or get a date wrong, and nobody would notice. Building it in code also keeps the digest's 2,500-character limit for everything else.
+
+#### `upcoming(emails, today, window, new_ids, your_rules)`
+```
+for each saved inbox email with events:
+    boosted ← rules.effective(email).boosted          (your rules decide ⭐)
+    for each event:
+        dated:   keep if today ≤ date ≤ today + window
+        undated: keep only if the email is in new_ids  (this digest's emails)
+        merge with an event of the same name (letters/digits only) and date:
+            fill missing fields from the other copy; new/boosted if either is
+```
+- **The whole archive, not just today's mail.** An event announced last week is still on the calendar this week. That's the point of a rolling calendar.
+- **Undated events only when new**, otherwise "Career fair volunteer call (no date)" would appear every morning forever.
+- **Merging** handles a reminder email repeating the original announcement.
+
+#### `render(events, today, window)`
+Day headings in uppercase (`FRI 23 OCT`), soonest first, then DATE NOT GIVEN. Within a day: ⭐ boosted first, then by time ("7pm", "10:30am" and "14:00" are all understood), then by name. Each event takes one to three lines: `mark time · name · place`, the detail, then `sign up by … · link` (or "sign-up closed").
+
+**Why uppercase headings?** `telegram.messages()` already splits a long digest at uppercase section headings. Day headings look the same to it, so a long calendar splits per day with "(cont.)" and `k/n` tags for free.
+
+#### Past events: `--past N`
+`upcoming` takes a `past` window too, so the range is `today - past … today + window`. `render` then says `EVENTS · last 30 days + next 14 days` (or `PAST EVENTS · last 30 days` with nothing ahead) and adds `(PAST)` to past day headings. That stays a valid uppercase heading with a note, so Telegram splitting still works per day. Past events drop the sign-up line, which would only ever say "closed". The morning message never passes `past`: it stays a look ahead. `mailbrief events --past N` is the way to look back.
+
+#### `build(today, new_ids, log)`
+Loads the archive and rules, then runs `upcoming` and `render`. It **never raises** (it returns `None` and logs a warning), because a calendar problem must not cost you the digest or the cursor. `run --send` sends it only after the digest was delivered, and `emails --digest --send` resends it. `mailbrief events` shows it on demand.
+
+### 7.19 `web_images.py`
+Downloads images that newsletters link to, for the vision model. The links come from email bodies, so they're **untrusted input**: an email could point at anything, including a device on your own network (a router page, `http://192.168.1.1/…`), or at a cloud metadata address. That's a classic attack called SSRF (server-side request forgery). So:
+```
+allowed(url):
+    https only
+    resolve the host name → every address must be a public internet address
+        (refused: private 10/8, 192.168/16, 172.16/12, loopback, link-local 169.254/16, CGNAT, IPv6 equivalents, multicast)
+
+download(urls, room, budget):
+    for at most 12 URLs:
+        skip unless allowed(url)
+        fetch with a 10 s timeout, no cookies, NO redirects, reading at most 5 MB + 1 byte
+        keep only image/png|jpeg|webp|gif of at least 15 KB that fits the budget
+        any error → skip (never an exception)
+```
+- **Why no redirects?** The check runs on the URL you were given. A public server could reply "go to `http://10.0.0.1/`", and following it would skip the check. Refusing redirects closes that door; CDN images rarely redirect.
+- **The known gap:** the name is resolved once for the check and again when connecting. A hostile DNS server could answer differently the second time ("DNS rebinding"). The fix would be connecting to the checked address directly; it's noted as a `ponytail:` in the code.
+- **Privacy, honestly:** fetching an image tells its server your IP address and the time. Newsletters can use that to see the mail was "opened" (by MailBrief, often before you). `REMOTE_IMAGES=off` turns downloads off; events then come from text and attached or inline images only.
+- **Measured on a week of real mail** (counts only): 16 linked images, 8.4 MB, for 5 newsletters, adding about 12 s to the run. No URL was refused.
 
 ---
 
@@ -1360,6 +1439,8 @@ Each module with real logic has one small test script, `tests/test_<module>.py`:
 | `test_threads` | reply-tree ordering (the "Ana replies to your reply after Bob" case), depth, `replied` only counting later messages, context lines |
 | `test_progress` | when piped: timestamped step lines, counters only at 25% steps, `working` start and ✓ lines, ✗ on failure, never a `\r` |
 | `test_labels` | label names (and what gets none: sent, other-folder, unclassified, previews); merging keeps your categories and swaps ours; pending/labelled/cleared/gone selection; period and day selection; parsing GetItem/UpdateItem replies incl. "gone"; built requests pass the guard; the guard refuses moves/deletes/sends, an `IsRead` change (as the field or hidden in the item), `SendAndSaveCopy`, empty updates and non-`MB:` category edits; reading the category list from StartupData; your own labels beside the built-ins, floors raising `MB: P<n>`, kept labels from removed rules |
+| `test_events` | the 14-day window and today/past edges; undated events only from new emails; sent mail ignored; merging fills gaps and keeps 🆕/⭐; the exact rendered layout (⭐ first, time order, sign-up closed, DATE NOT GIVEN); a long calendar splits per day; `past` keeps the last N days only, `(PAST)` headings, both headers, no sign-up line on past events, past calendars split per day too |
+| `test_web_images` | https and public addresses only (private, loopback, link-local, CGNAT, IPv6, multicast, mixed and unresolvable hosts refused); downloads filtered by type and size, stopped by room, budget and 12 tries; a failing fetch is skipped; redirects never followed; `REMOTE_IMAGES` defaults on |
 | `test_rules` | `rules.json` checks (built-in name clashes, duplicates, missing labels/descriptions, bad priorities); whole-word course codes, only the start of the body; sender address/name and direct-only; topic tags, boosts with and without a profile, removed topics; adding replaces, save/load, a broken file raises |
 | `test_service` | every `RUN_AT` form parses (daily, weekdays, weekends, day lists, `day-N`, scopes) and bad ones are rejected; due runs: on time, not early, three days off = one catch-up, latest per scope (daily + weekly + monthly), nothing when done; next run across weekends and months; only `new` commits; the lock is exclusive and released |
 
@@ -1417,6 +1498,8 @@ Each of these was found by running against real Outlook, and each shaped the cod
 - A **forward** you sent counts as "replied".
 - JSON files instead of a database: fine for one user.
 - The AI can't see PDFs or Office attachments, only their names.
+- Images over 5 MB are skipped, not resized. Linked images are chosen by name and size, so an odd banner can take a slot from a poster.
+- Events from older mail need `labels retag`; dates the AI can't work out stay undated.
 - **Service logs are never pruned** (one small file per month); delete old ones by hand if you like.
 - The **Docker image hasn't been built yet** (to save disk); expect small fixes on the first build.
 - On a server, the Outlook login is **copied from your PC**, and Microsoft may expire logins from datacenter IPs sooner.
@@ -1425,7 +1508,7 @@ Each of these was found by running against real Outlook, and each shaped the cod
 - **M4 ✅:** `MB: <category>` + `MB: P<priority>` labels in Outlook, coloured, applied every run, easy to clear (section 7.16). The session-expired alert came with M5.
 - **M5 ✅:** `serve` with an extensible schedule, `stop` / `status`, autostart at logon, run locks, logs, the login alert, Docker files (section 7.15).
 - **M6a ✅:** your own labels: courses, professors (direct-only), AI topics, a profile, priority floors, boosts and the OPPORTUNITIES & EVENTS section (section 7.17). Telegram `/label` commands come with M7.
-- **M6b:** newsletter images and events: inline images read, an `events` list per email, an UPCOMING EVENTS message.
+- **M6b ✅:** newsletter images and events: inline posters and guarded linked-image downloads, an `events` list per email, a rolling 14-day UPCOMING EVENTS calendar built by code (sections 7.18 and 7.19).
 - **M7:** ask your inbox in Telegram (search index, cited answers, attachments).
 - **M8:** optional self-healing browser agent behind a code-enforced blocklist, failure screenshots, and a "move to folders" mode.
 - **Later:** WhatsApp/Slack/email delivery, Gmail, Browserless (Docker/cloud), a dashboard. Multi-user hosting is cancelled (README §13).

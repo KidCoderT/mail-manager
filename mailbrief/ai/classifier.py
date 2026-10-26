@@ -2,6 +2,7 @@
 
 import os
 import re
+from datetime import date
 
 from mailbrief.ai.client import complete, extract_json
 
@@ -22,8 +23,14 @@ Attached images (if any) belong to the email.
 Reply with ONLY a JSON object:
 {{"category": one of the categories, "priority": integer 1-5 where 1 = deal with it first and 5 = safe to ignore
  (Urgent is usually 1-2, Newsletter and Low Priority usually 4-5), "one_line_summary": string,
- "action_items": [strings], "deadline": "YYYY-MM-DD" or null}}"""
+ "action_items": [strings], "deadline": "YYYY-MM-DD" or null,
+ "events": [every event, talk, workshop, fair, competition, info session or sign-up the email or its images announce,
+ each {{"name": string, "detail": one line on what it is and why someone would go, "date": "YYYY-MM-DD" or null,
+ "time": e.g. "7pm" or null, "place": string or null, "link": URL or null, "signup_deadline": "YYYY-MM-DD" or null}};
+ [] if none. Work out dates like "this Thursday" from the Received date.]}}"""
 BODY_LIMIT = 6000
+MAX_EVENTS = 10
+_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 # Where a reply's quoted history starts: "On <date>, <name> wrote:" or an Outlook "From: … Sent: …" header.
 QUOTE_START = re.compile(r"^(On .{5,200} wrote:|-{2,} ?Original Message ?-{2,}|From: .+\n(Sent|Date): )", re.M)
 
@@ -47,7 +54,41 @@ def rules_block(rules: dict | None) -> str:
     return "\n" + "\n".join(lines)
 
 
-def validate(data: dict | None, topics: tuple[str, ...] = ()) -> dict | None:
+def _text(value, limit: int) -> str | None:
+    text = " ".join(str(value).split()) if isinstance(value, (str, int, float)) and not isinstance(value, bool) else ""
+    return text[:limit] or None
+
+
+def _date(value, received: date | None) -> str | None:
+    """A YYYY-MM-DD within a year of the email (catches a wrong year), else None."""
+    if not isinstance(value, str) or not _DATE.fullmatch(value):
+        return None
+    try:
+        d = date.fromisoformat(value)
+    except ValueError:
+        return None
+    return value if received is None or abs((d - received).days) <= 366 else None
+
+
+def validate_events(items, received: date | None = None) -> list[dict]:
+    """The events list, cleaned: named events only, bounded fields, real dates and http(s) links, no repeats."""
+    out, seen = [], set()
+    for it in items if isinstance(items, list) else []:
+        if not isinstance(it, dict) or not (name := _text(it.get("name"), 120)):
+            continue
+        link = _text(it.get("link"), 500)
+        ev = {"name": name, "detail": _text(it.get("detail"), 200), "date": _date(it.get("date"), received),
+              "time": _text(it.get("time"), 30), "place": _text(it.get("place"), 120),
+              "link": link if link and link.lower().startswith(("http://", "https://")) else None,
+              "signup_deadline": _date(it.get("signup_deadline"), received)}
+        key = (name.lower(), ev["date"])
+        if key not in seen:
+            seen.add(key)
+            out.append(ev)
+    return out[:MAX_EVENTS]
+
+
+def validate(data: dict | None, topics: tuple[str, ...] = (), received: date | None = None) -> dict | None:
     if not data or data.get("category") not in CATEGORIES:
         return None
     priority = data.get("priority")
@@ -63,6 +104,7 @@ def validate(data: dict | None, topics: tuple[str, ...] = ()) -> dict | None:
         # Only topics from your list survive, spelled as you wrote them.
         "tags": list(dict.fromkeys(names[t.lower()] for t in tags if isinstance(t, str) and t.lower() in names)),
         "boost": data.get("boost") is True,
+        "events": validate_events(data.get("events"), received),
     }
 
 
@@ -85,8 +127,9 @@ def classify(email: dict, images: list[str], context: list[str] | None = None, r
         model = os.environ.get("AI_CLASSIFIER_MODEL", "qwen3.6:35b")
         content = text
     for _ in range(2):  # one retry on invalid output
-        result = validate(extract_json(complete(model, [{"role": "user", "content": content}])), topics)
+        reply = complete(model, [{"role": "user", "content": content}], max_tokens=3000)  # events lists run long
+        result = validate(extract_json(reply), topics, email["received_at"].date())
         if result:
             return {**result, "model": model}
     return {"category": "Unclassified", "priority": 3, "one_line_summary": email["subject"],
-            "action_items": [], "deadline": None, "tags": [], "boost": False, "model": model}
+            "action_items": [], "deadline": None, "tags": [], "boost": False, "events": [], "model": model}
