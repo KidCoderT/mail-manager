@@ -1068,7 +1068,9 @@ def main() -> None:
         prog="mailbrief", description="AI morning email digest for Outlook"
     )
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("login", help="sign in to Outlook once in a visible browser")
+    login_p = sub.add_parser("login", help="sign in to Outlook once in a visible browser")
+    login_p.add_argument("--remote", action="store_true",
+                         help="no screen (a server): print a one-time link to sign in from any browser")
     run_p = sub.add_parser(
         "run", help="headless: classify new emails and print the digest"
     )
@@ -1286,6 +1288,10 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "login":
+        if args.remote:
+            from mailbrief.session.remote_login import run_cli
+
+            sys.exit(run_cli())
         from mailbrief.session.login_once import login_once
 
         login_once()

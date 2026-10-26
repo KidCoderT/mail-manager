@@ -225,7 +225,10 @@ def _alert_login(state: dict) -> None:
     from mailbrief.main import deliver
 
     out = io.StringIO()
-    if deliver("⚠️ MailBrief: the Outlook login has expired, so no digest until you run `mailbrief login`.", out):
+    from mailbrief.notify import bot
+
+    how = "send /login here to sign in again" if bot.enabled() else "run `mailbrief login`"
+    if deliver(f"⚠️ MailBrief: the Outlook login has expired, so no digest until you {how}.", out):
         state["alert_day"] = today
     for line in out.getvalue().splitlines():
         log(line)
@@ -270,6 +273,13 @@ def _serve(spec: str, schedule: list[dict]) -> int:
     log(f"MailBrief service started (pid {os.getpid()}), schedule: {spec}")
     from mailbrief.notify import bot
 
+    from mailbrief.session import remote_login
+
+    try:
+        if (web := remote_login.start_always()):  # Render: a web service must keep a port open
+            log(f"web: listening on port {web} (everything is 404 except an open /login sign-in)")
+    except (OSError, ValueError) as e:
+        log(f"web: couldn't open the port ({e})")
     if bot.start(stopping):  # Telegram chat (M7) in a thread; CHAT=off or no token: send-only, as before
         log("chat: on (only your registered private chats get answers)")
     announced, retry_at, attempts, done_now = None, None, 0, set()

@@ -1,5 +1,7 @@
 import json
 import tempfile
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -112,6 +114,37 @@ def test_label_command_parsing():
     assert "Added MB: Networking" in label_command('add topic Networking "career fairs, meetups" p2')
     assert "Removed MB: CS2040S" in label_command("remove course CS2040S")
     assert label_command('add sender "unclosed').startswith("Usage")
+
+
+def test_login_only_from_your_chat_and_once_at_a_time():
+    started, release = [], threading.Event()
+
+    def fake_login(say, show_link):
+        started.append(1)
+        show_link("https://mb.example/login#TOKEN")
+        release.wait(5)
+        say("Logged in ✅")
+        return True
+
+    api = Recorder([msg(1, 999, "/login"), msg(2, 111, "/login")])
+    b = Bot(api=api, tz=SG, login=fake_login)
+    b.poll_once()
+    for _ in range(100):
+        if api.sent():
+            break
+        time.sleep(0.02)
+    assert started == [1]  # the stranger's /login did nothing
+    first = api.sent()[0]
+    assert first["chat_id"] == "111" and first["html"] and 'href="https://mb.example/login#TOKEN"' in first["text"]
+    api.updates = [msg(3, 111, "/login")]
+    b.poll_once()
+    assert "already open" in api.sent()[-1]["text"] and started == [1]
+    release.set()
+    for _ in range(100):
+        if not b.logging_in.is_set():
+            break
+        time.sleep(0.02)
+    assert api.sent()[-1]["text"] == "Logged in ✅" and not b.logging_in.is_set()
 
 
 def test_switch():

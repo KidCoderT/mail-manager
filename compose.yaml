@@ -13,4 +13,5 @@ services:
       TZ: Asia/Singapore
     volumes:
       - ./data:/app/data      # session.enc, archive, cursor, logs: survive rebuilds
+    # ports: ["127.0.0.1:8080:8080"]   # /login sign-in page: put an https proxy/tunnel in front, set PUBLIC_URL
     shm_size: 1gb             # Chromium needs more shared memory than Docker's 64 MB default

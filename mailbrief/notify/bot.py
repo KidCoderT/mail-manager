@@ -28,10 +28,11 @@ Each answer cites its emails: tap ↗ or a source to open it in Outlook.
 /labels: your label rules
 /label add course CS2040S | sender a@b.c "Prof X" [direct] [boost] [p2] | topic Name "description" [p2]
 /label remove course|sender|topic KEY
-/profile your profile text"""
+/profile your profile text
+/login: sign in to Outlook again (when I say the login expired)"""
 COMMANDS = [("new", "start a fresh conversation"), ("sync", "check for new mail now"),
             ("digest", "send the latest digest again"), ("events", "upcoming events"),
-            ("labels", "your label rules"), ("help", "what I can do")]
+            ("labels", "your label rules"), ("login", "sign in to Outlook again"), ("help", "what I can do")]
 
 
 def enabled() -> bool:
@@ -46,12 +47,14 @@ def _log(msg: str) -> None:
 
 
 class Bot:
-    def __init__(self, api=None, ask=None, fetch_files=None, run_sync=None, tz=None):
+    def __init__(self, api=None, ask=None, fetch_files=None, run_sync=None, tz=None, login=None):
         self.api = api or telegram._api
         self.ask = ask              # answer.ask (injectable for tests)
         self.fetch_files = fetch_files  # [(email, attachment)] → [file dicts]; default opens Outlook
         self.run_sync = run_sync    # () → exit code of a `new` run with --send
         self.tz = tz
+        self.login = login          # remote_login.run (injectable for tests)
+        self.logging_in = threading.Event()
         self.offset = None
         self.history: dict[str, list[tuple[str, str]]] = {}  # memory only, never on disk
         self.tokens: dict[str, tuple[dict, dict]] = {}      # button token → (email, attachment); until restart
@@ -186,6 +189,8 @@ class Bot:
             self.say(chat_id, "Fresh start: I've forgotten this conversation.")
         elif name == "/sync":
             self._sync(chat_id)
+        elif name == "/login":
+            self._login(chat_id)
         elif name == "/digest":
             self._digest(chat_id)
         elif name == "/events":
@@ -211,12 +216,44 @@ class Bot:
             try:
                 code = (self.run_sync or run_sync)()
                 note = {0: None, 3: "A run was already in progress; its digest comes as usual.",
-                        2: "Outlook needs `mailbrief login` on your PC first."}.get(code, f"The check failed (exit {code}); it's in the log.")
+                        2: "Outlook needs you to sign in again: send /login."}.get(code, f"The check failed (exit {code}); it's in the log.")
                 if note:
                     self.say(chat_id, note)
             finally:
                 self.syncing.clear()
 
+        threading.Thread(target=work, daemon=True).start()
+
+    def _login(self, chat_id: str) -> None:
+        """A one-time sign-in page (session/remote_login.py) for when the server's Outlook login has expired."""
+        from mailbrief.service import Busy
+        from mailbrief.session import remote_login
+
+        if self.logging_in.is_set():
+            self.say(chat_id, "A sign-in page is already open: use the link I sent (or wait 10 minutes for it to close).")
+            return
+        self.logging_in.set()
+
+        def work():
+            try:
+                (self.login or remote_login.run)(lambda t: self.say(chat_id, t),
+                                                 lambda link: self.say(chat_id, remote_login.link_html(link), html=True))
+                _log("sign-in page closed")
+            except Busy:
+                self.say(chat_id, "A MailBrief run is using Outlook right now; send /login again in a minute.")
+            except ValueError as e:  # PUBLIC_URL isn't https
+                self.say(chat_id, str(e))
+            except OSError:  # the port is taken or blocked
+                _log("sign-in page failed (port)")
+                self.say(chat_id, f"Couldn't open the sign-in page on port {remote_login.port()}: it's in use or blocked. "
+                                  "Set PORT to another number and try /login again.")
+            except Exception as e:  # noqa: BLE001
+                _log(f"sign-in page failed ({type(e).__name__})")
+                self.say(chat_id, "The sign-in page failed (it's in the log). Send /login to try again.")
+            finally:
+                self.logging_in.clear()
+
+        _log("sign-in page opened")
         threading.Thread(target=work, daemon=True).start()
 
     def _digest(self, chat_id: str) -> None:

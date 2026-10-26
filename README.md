@@ -541,6 +541,7 @@ mail-manager/
 │   ├── links.py                # ↗ links to the emails in Outlook, built by code
 │   ├── session/
 │   │   ├── login_once.py       # the one-time visible login
+│   │   ├── remote_login.py     # /login: sign in from any browser via a one-time link (servers)
 │   │   └── manager.py          # save/load the encrypted session
 │   ├── browser/
 │   │   ├── connect.py          # local launch, or connect_over_cdp if BROWSER_WS_URL set
@@ -598,6 +599,8 @@ EVENTS_DAYS=14
 # Chat with your inbox in Telegram (§3.9)
 CHAT=on                         # off = the bot stays send-only
 AI_EMBED_MODEL=bge-m3           # turns emails and questions into vectors for search
+# PUBLIC_URL=                   # the /login sign-in link's address (https://); Railway: set automatically
+# PORT=8080                     # the sign-in page's port, only while a sign-in is open (Railway sets it)
 AI_ANSWER_MODEL=qwen3.8:27b     # writes the cited answers
 ```
 
@@ -665,7 +668,12 @@ AI_ANSWER_MODEL=qwen3.8:27b     # writes the cited answers
 **Always on, on a server:** `docker compose up -d --build` with the repo's `Dockerfile` and `compose.yaml`.
 - The container runs `mailbrief serve` as a non-root user, with `restart: unless-stopped`.
 - `.env` is passed in at runtime, and `data/` is a volume. Neither is baked into the image.
-- Log in on your PC, then copy `data/session.enc` across (with the same `SESSION_ENCRYPTION_KEY`).
+- **Signing in on a server with no screen:** send **`/login`** to your bot. You get a one-time link to a page showing a live picture of the server's browser. Sign in there from your phone, and the page shuts itself down.
+  - **It works once:** the first tap turns its token into a private cookie for your browser.
+  - It's https-only and open for at most 10 minutes.
+  - Details: commands.md §2, `login --remote`.
+- **Render:** [commands.md §7 "Deploy on Render"](commands.md#deploy-on-render). It needs a paid instance and a disk, since the free plan sleeps and has no disk; `serve` keeps the port open there, answering 404 except during a sign-in.
+- **Railway:** step-by-step in [commands.md §7 "Deploy on Railway"](commands.md#deploy-on-railway): Singapore region, a volume at `/app/data`, then the first sign-in.
 
 Steps: [commands.md §7 "Hosting"](commands.md#7-running-automatically). This is hosting **for yourself** only; hosting for other people is cancelled (§13).
 
@@ -675,7 +683,7 @@ Steps: [commands.md §7 "Hosting"](commands.md#7-running-automatically). This is
 
 | Risk | Mitigation |
 |---|---|
-| Session expires / MFA re-prompt | Detect redirect → Telegram re-login alert → quick re-login command |
+| Session expires / MFA re-prompt | Detect redirect → Telegram re-login alert → `/login` (a one-time sign-in page, works from your phone) |
 | Outlook UI changes break selectors | Network-first reading (no selectors except the message list and tabs); optional AI fallback and failure screenshots (M8) |
 | Outlook's internal JSON format changes | DOM fallback; all parsing in `owa_network.py`; `read_path` logged per run |
 | Prompt injection via email content | No tools for models that read email; agent only runs with no email open; code-enforced action blocklist |
@@ -722,6 +730,7 @@ Steps: [commands.md §7 "Hosting"](commands.md#7-running-automatically). This is
 | **M6a** ✅ | Your own labels (§3.8): `rules.json`; profile, courses, senders (direct-only), AI topics with priority floors; To/Cc recipients + archive re-fetch; boosts + OPPORTUNITIES & EVENTS digest section; `mailbrief rules`, `labels retag`, `labels clear --label [--everywhere]`. (Telegram `/label` commands came with M7) |
 | **M6b** ✅ | Newsletter images & events (§3.10): inline images (≥30 KB) and guarded linked-image downloads (`REMOTE_IMAGES=on`), 4 images / 8 MB per email; `events` list with one-line `detail`; code-built rolling 14-day UPCOMING EVENTS calendar (`EVENTS_DAYS`), `mailbrief events` |
 | **M7** ✅ | Ask your inbox (§3.9): ↗ links to Outlook on every digest line, event and answer; encrypted `bge-m3` index with hybrid search; cited answers with quotes and sources; allowlisted Telegram listener in `serve`; attachment buttons and requested files; `/sync`, `/digest`, `/events`, `/label`, `/profile`; `mailbrief index`, `chat`, `bot` |
+| **Hosting** ✅ | `/login` and `mailbrief login --remote`: sign in to Outlook from any browser when running on a server (one-time link, cookie-bound, https-only, 10 min); Railway recipe |
 | **M8** | Optional AI fallback agent behind a code-enforced blocklist, failure screenshots, move mode |
 | **Later** | Attachment text (PDF/Office) in the index, voice questions (`whisper-large-v3`), Browserless (Docker, then cloud), WhatsApp/Slack/Email/Teams adapters, Gmail support, web dashboard |
 | ~~Multi-user~~ | **Cancelled** for legal reasons (§13) |

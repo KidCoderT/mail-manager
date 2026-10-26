@@ -63,7 +63,7 @@ uv run mailbrief login
 
 **When to run it again:**
 - the first time;
-- whenever `run` says *"Outlook session expired. Run `mailbrief login` again."*;
+- whenever `run` says *"Outlook session expired. Run `mailbrief login` again."* (on a server: `/login` in Telegram, or `login --remote`);
 - after changing `SESSION_ENCRYPTION_KEY`.
 
 How often Microsoft expires sessions is set by your organisation's security policy.
@@ -71,6 +71,44 @@ How often Microsoft expires sessions is set by your organisation's security poli
 **Tips:**
 - Log in on **the same machine** that runs the daily job. Copying sessions between machines or networks often forces a re-login.
 - No email is read during login.
+
+### `mailbrief login --remote`: sign in from any browser (servers with no screen)
+```
+uv run mailbrief login --remote      # prints a one-time link
+```
+The same as **`/login`** in Telegram. Use it when MailBrief runs on a server (Railway, Docker) where no window can open. **Step by step:**
+
+1. **The link.** A headless Chromium opens the Microsoft sign-in page in a **fresh** browser profile, never your saved session. A small web server starts on `$PORT` (default 8080), and you get a link: `https://<your-app>/login#<random token>`.
+2. **Start.** Open the link, then tap **Start**. You see a live picture of that browser, refreshed every half second:
+   - tap the picture to click;
+   - type in the box and press **Send**, which hides your typing unless you tick "show";
+   - the **Enter**, **Tab** and **⌫** buttons press those keys.
+3. **Sign in** as usual: NUS SSO, MFA, and tick **Stay signed in**.
+4. **Saved and checked.** When your inbox list shows, the session is saved to `data/session.enc`, then checked by opening Outlook again with it.
+   - On success you get **"Logged in ✅"**.
+   - Then the web server and browser stop, and the link is dead.
+
+**Only you can use the link:**
+- **The token is in the `#` part,** which browsers never send to servers, so it isn't in any log.
+- **It works once.** Tapping Start uses up the token and gives *your* browser a random private cookie. Every later request needs that cookie, so a forwarded or copied link does nothing. Link previews can't use it up either.
+- **It's open for at most 10 minutes,** and closes as soon as you're signed in. Otherwise nothing listens at all.
+- **`https://` only.** It refuses any other address, so your password never crosses the internet unencrypted. The exception is `http://localhost`, for trying it on your PC, where it listens on this PC only.
+- **Nothing is written down.** Screenshots and your typing stay in memory, and logs only say "sign-in page opened/closed".
+- **It holds the run lock,** so a scheduled run waits for it, and vice versa: *"A MailBrief run is using Outlook right now"*.
+
+**The address:** `PUBLIC_URL`, else `RENDER_EXTERNAL_URL` on Render or `https://$RAILWAY_PUBLIC_DOMAIN` on Railway (both set automatically), else `http://localhost:$PORT`.
+
+**Try it on your PC:** `uv run mailbrief login --remote`, or `/login` while `serve` runs, then open the link **on this PC**. A `localhost` link only works on the machine itself, not on your phone.
+- **If the port is blocked:** Windows often reserves 8080, so on your PC without `PUBLIC_URL` it falls back to any free port, and the link shows which one.
+- **On a server,** or with `PUBLIC_URL` set, the port is never changed silently. A blocked port is reported instead: *"Couldn't open the sign-in page on port …"*.
+
+**Exit codes:**
+| Code | Meaning |
+|---|---|
+| 0 | Signed in |
+| 1 | Timed out, or the saved login didn't work |
+| 2 | `PUBLIC_URL` isn't `https://`, or the port is in use or blocked |
+| 3 | A run is using Outlook |
 
 ---
 
@@ -610,7 +648,7 @@ How it behaves:
 - **First start ever:** no catch-up; it waits for the next scheduled time.
 - **Each run is a separate process** with a 45-minute limit. If Outlook or the AI hangs, that run is killed and `serve` carries on.
 - **Retries:** a failed run (e.g. no network right after waking) is retried after 15 min, up to 3 attempts, then skipped until the next scheduled time.
-- **Login expired:** not retried, since only you can log in. It sends **one Telegram message a day**: `⚠️ MailBrief: the Outlook login has expired…`. Run `mailbrief login`; the next scheduled run works again.
+- **Login expired:** not retried, since only you can log in. It sends **one Telegram message a day**: `⚠️ MailBrief: the Outlook login has expired…`. Send `/login` to the bot (with chat on), or run `mailbrief login`; the next scheduled run works again.
 - **No email content in the log:** scheduled runs use `--quiet`, so only progress, counts and results are logged, never subjects or digest text (the digest is in Telegram and the encrypted archive).
 - **Only one `serve` at a time:** a second one says `MailBrief is already running` (exit 3).
 
@@ -684,9 +722,61 @@ docker compose exec mailbrief mailbrief status   # status
 docker compose down                              # stop properly
 git pull && docker compose up -d --build         # update to new code
 ```
-**Logging in on a server:** a server has no screen for `mailbrief login`, so log in on your PC and copy `data/session.enc` across. The `SESSION_ENCRYPTION_KEY` must be identical, or it can't be decrypted. When the login expires, the Telegram alert tells you; repeat the copy.
+**Logging in on a server:** there's no screen, so you sign in from your phone:
+- **Normally:** send **`/login`** to your bot and open the link (section 2, `login --remote`).
+- **Server shell:** run `mailbrief login --remote` there, which prints the link.
+- **Without either:** log in on your PC and copy `data/session.enc` across. The `SESSION_ENCRYPTION_KEY` must be identical.
+
+When the login expires, the Telegram alert says "send /login".
 
 The image needs about 2 GB of disk. Microsoft logins from a datacenter IP may expire sooner than from your PC.
+
+**Home server with Docker:** uncomment the `ports:` line in `compose.yaml` and set `PUBLIC_URL` to an `https://` address that reaches it. That means a reverse proxy or tunnel with TLS; the sign-in page itself speaks plain HTTP behind it.
+
+### Deploy on Railway
+1. **New project** → *Deploy from GitHub repo*. Railway builds the existing `Dockerfile`.
+2. **Region:** Settings → choose **Singapore**, so Microsoft and NUS see a local address.
+3. **Volume:** add one mounted at **`/app/data`** (session, archive, index, logs).
+   - Railway volumes belong to root, so add the variable `RAILWAY_RUN_UID=0` if runs fail with "permission denied" in `data/`.
+4. **Variables:**
+   - `SESSION_ENCRYPTION_KEY`, `SOCLAAS_API_KEY`, `TELEGRAM_BOT_TOKEN`;
+   - `TZ=Asia/Singapore`, `RUN_AT=daily 07:30`;
+   - anything else from your `.env`.
+5. **Networking** → *Generate Domain*. **Type the port in by hand:** `8080`, or whatever `PORT` is set to.
+   - Railway can't detect it, because nothing listens until a sign-in starts.
+   - **Don't set a healthcheck path,** for the same reason: the deploy would fail.
+6. **First sign-in.** The bot only answers chats it knows, and the new volume knows none, so open the service's **shell** and run:
+   ```
+   mailbrief add-destination telegram --chat-id <your chat id>   # the id is in data/destinations.json on your PC
+   mailbrief login --remote                                       # open the printed link on your phone
+   ```
+   From then on, sign in again with **`/login`** in Telegram.
+7. **Optional: keep your history.** Copy your PC's `data/` (archive, index, rules, destinations) into the volume first; it needs the same key. Otherwise the server starts empty, and `mailbrief run --backfill` refills it from Outlook.
+
+### Deploy on Render
+Render differs from Railway in two ways that matter:
+- **A web service must always have a port open,** or its deploy fails with *"no open ports detected"*. On Render (`RENDER=true` is set for you), `serve` therefore keeps the sign-in server running on `$PORT` the whole time. It answers **404 to everything** unless a `/login` sign-in is open, and then only to the browser holding that one-time link. The same one-time token, cookie, 10-minute and https rules apply.
+- **The free plan can't run MailBrief.** Free web services sleep after 15 minutes without web traffic, which would stop the schedule and the bot. They also can't have a disk, so the session and archive would vanish on every restart. You need a paid instance (Starter or above) plus a disk.
+
+1. **New → Web Service** from your GitHub repo. Render detects the `Dockerfile`.
+2. **Region:** Singapore. **Instance:** Starter to begin with. Starter has 512 MB of RAM, and a run's Chromium can be tight in that; if the logs show the service being killed for memory, move up to Standard.
+3. **Disk:** Advanced → *Add Disk*, mount path **`/app/data`**, 1 GB is plenty.
+4. **Environment:** `SESSION_ENCRYPTION_KEY`, `SOCLAAS_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TZ=Asia/Singapore`, `RUN_AT=daily 07:30`.
+   - You don't need `PORT` or `PUBLIC_URL`: Render sets `PORT` (10000) and `RENDER_EXTERNAL_URL`, the `https://….onrender.com` address used for the link.
+   - **Leave the health check path empty.**
+5. **First sign-in.** Deploy, then open **Shell** in the Render dashboard and run:
+   ```
+   mailbrief add-destination telegram --chat-id <your chat id>   # the id is in data/destinations.json on your PC
+   ```
+   Then send **`/login`** to your bot and open the link on your phone.
+   - On Render, `login --remote` in the shell can't be used, because `serve` already holds the port. It says so.
+6. **Optional:** to keep your history, copy your PC's `data/` onto the disk; it needs the same key. Otherwise `mailbrief run --backfill` refills it.
+
+**If the logs show "Permission denied" under `/app/data`:** the disk is owned by root while the container runs as user 1000. Tell me; the fix is a small Dockerfile change.
+
+Any other host that insists on an open port: set `LOGIN_PAGE=always`.
+
+**If NUS blocks sign-ins from datacenter addresses,** the Microsoft page says so during sign-in. Then use the copy-`session.enc` route, or a home server.
 
 ### Exit codes
 | Command | 0 | 2 | 3 |
@@ -719,6 +809,7 @@ uv run python tests/test_links.py         # Outlook links: the URL format, [n] r
 uv run python tests/test_index.py         # search index: chunking, incremental updates, pruning, hybrid search, filters, never raises
 uv run python tests/test_answer.py        # chat answers: plan checks, citation clean-up, file requests checked, rendering, history cap
 uv run python tests/test_bot.py           # Telegram chat: only your private chats, buttons, files, commands, /label parsing, errors
+uv run python tests/test_remote_login.py  # sign-in page: one-time token → cookie, 404s, expiry, input checks, headers, https-only
 uv run python tests/test_service.py       # RUN_AT parsing (and rejecting bad ones), catch-up/due runs, next run, run flags, locks
 ```
 All of them in one go (Git Bash):
@@ -762,6 +853,9 @@ uv add <package>      # updates pyproject.toml + uv.lock and installs it
 | `AI_EMBED_MODEL` | `bge-m3` | The model that turns emails and questions into search vectors. Changing it rebuilds the index on the next update |
 | `AI_ANSWER_MODEL` | `qwen3.8:27b` | The model that writes chat answers (thinking on) |
 | `RUN_AT` | `daily 07:30` | When `serve` runs, and which digest each time (format in section 7) |
+| `PUBLIC_URL` | `$RENDER_EXTERNAL_URL` or `https://$RAILWAY_PUBLIC_DOMAIN`, else `http://localhost:$PORT` | The address in the `/login` sign-in link. Must be `https://` unless it's localhost |
+| `PORT` | `8080` (Railway and Render set it) | The port the sign-in page listens on, only while a sign-in is open (always on Render) |
+| `LOGIN_PAGE` | *(empty)*; automatic on Render | `always`: `serve` keeps the port open, answering 404 to everything except an open sign-in. For hosts that require an open port |
 
 Listed in `.env.example` but **not used by the code yet** (planned for later milestones): `FALLBACK_AGENT`, `DATABASE_URL`, `RESTORE_UNREAD` (`SORT_MODE` is replaced by `OUTLOOK_LABELS`; a "move to folders" mode is M6).
 
@@ -962,6 +1056,7 @@ Runs inside `mailbrief serve` (or alone with `mailbrief bot`, for testing). It l
 | `/label add topic Networking "career fairs, meetups" [p2]` | Add an AI topic |
 | `/label remove course\|sender\|topic KEY` | Remove a rule (old emails keep its label) |
 | `/profile text` | Set your profile |
+| `/login` | Sign in to Outlook again from your phone: a one-time link to a sign-in page (section 2, `login --remote`) |
 
 ### `mailbrief bot`
 Runs just the Telegram listener in the foreground, without the scheduler, until Ctrl+C. Useful for testing the chat. It refuses to start while `serve` is running (exit 3), since `serve` already listens and Telegram allows one reader at a time. Exit 2 if `CHAT=off` or there's no bot token.

@@ -37,6 +37,7 @@ Read it top to bottom once. After that, each section stands on its own as a refe
    - 7.21 [`index.py`](#721-indexpy): the search index (chunks, vectors, hybrid search)
    - 7.22 [`ai/answer.py`](#722-aianswerpy): question → plan → search → cited answer
    - 7.23 [`notify/bot.py`](#723-notifybotpy): the Telegram chat
+   - 7.24 [`session/remote_login.py`](#724-sessionremote_loginpy): signing in from your phone (servers with no screen)
 8. [The full run, end to end](#8-the-full-run-end-to-end)
 9. [Failure handling: what can go wrong and what happens](#9-failure-handling)
 10. [Security model](#10-security-model)
@@ -141,6 +142,7 @@ mail-manager/
 │   │   └── outlook_writer.py   the ONLY code that changes Outlook: categories only
 │   ├── session/
 │   │   ├── login_once.py       the one-time visible login
+│   │   ├── remote_login.py     sign in from any browser via a one-time link (/login, servers)
 │   │   └── manager.py          save/load the encrypted session
 │   ├── storage/crypto.py       encrypt/decrypt with your key
 │   ├── ai/
@@ -1366,6 +1368,55 @@ loop: getUpdates(timeout 20 s, offset) → for each update:
 - **`/sync`** starts a normal `new` run as a child process (`service._run_child`), the same as a scheduled one, so the digest arrives as usual. `/label …` and `/profile …` call the same `rules_command` as the terminal, so the checks and messages are identical.
 - **Never dies:** each update is handled inside a try. A 409 ("another getUpdates is running", e.g. `add-destination`) waits 30 s, and network errors wait 10 s.
 - **Logs are counts only:** "answered in 14s (4 sources)", "ignored 2 message(s)", never questions or answers.
+- **`/login`** runs `remote_login.run` in its own thread (section 7.24) and sends you the link. A second `/login` while one is open just says so.
+
+### 7.24 `session/remote_login.py`
+**The problem:** `login_once` needs a screen and a keyboard. A server (Railway, Docker) has neither, and the login has to be renewed every few months.
+
+**The idea:** run the browser on the server, and show *you* a picture of it in any browser, through a web page that lives only for the sign-in.
+```
+/login (your chat only)  or  mailbrief login --remote
+  take the run lock                                    ← never two Chromiums; a run can't start mid-sign-in
+  token ← 32 random bytes;  start a web server on $PORT
+  headless Chromium, FRESH profile, phone-sized (480×860), user agent with "HeadlessChrome" → "Chrome"
+  send you  https://<app>/login#<token>
+  loop until signed in or 10 minutes pass:
+      apply your queued taps / typing / keys;  screenshot → the page shows it every 0.5 s
+      an inbox row is visible? → save the session, CHECK it in a new context with open_outlook
+  stop the server and the browser                      ← the link is dead
+```
+The pieces, and why each is built that way:
+- **The token is in the `#fragment`.** Browsers never send the fragment to the server, so the token can't appear in Railway's request logs, a proxy's logs or synced browser history. The page's own script reads it, then wipes it from the address bar.
+- **The token turns into a cookie, once.** `GET /login` only shows a Start button. The button **POSTs** the token, which:
+  - burns it (`Window.bind`);
+  - sets a random cookie: `HttpOnly` (scripts can't read it), `SameSite=Strict` (other sites can't send it), and `Secure` on https.
+
+  Every other route (`/frame`, `/input`, `/status`) needs that cookie. Link-preview bots only GET, so they can't burn the token, and a copied link is useless once you've tapped Start.
+- **A wrong token, a missing cookie and an unknown path all get the same 404.** A prober can't tell that a sign-in is open.
+- **A fresh browser profile,** never the saved session. Even someone who did get in would see a Microsoft sign-in box, not your inbox.
+- **https only.** `is_local` allows `http://` only for localhost, and then binds to 127.0.0.1. Anything else must be `https://`, so the password never crosses the internet in clear text. On Railway the https is Railway's own; the app sits behind it.
+- **Inputs are checked:**
+  - a click must land inside the 480×860 viewport;
+  - typed text is at most 200 characters;
+  - keys come from a short allowlist (Enter, Tab, Backspace, Escape, arrows);
+  - `/input` and `/login` demand `Content-Type: application/json`, which a plain HTML form on another site can't send without a CORS preflight, and we never answer one.
+- **Taps are scaled.** A phone shows the 480-pixel picture smaller. The page converts a tap with `x × naturalWidth / shownWidth` so it lands where you meant.
+- **Headers on every reply:**
+  - `Cache-Control: no-store`;
+  - `Referrer-Policy: no-referrer`;
+  - `X-Frame-Options: DENY` (no hidden-frame tricks);
+  - a Content-Security-Policy that allows only this page's own script (a random nonce per load).
+- **Threads:**
+  - **Playwright** is driven only from the thread that called `run`, because the sync API isn't thread-safe.
+  - **The web server's threads** only put events on a `queue.Queue` and read the latest screenshot bytes.
+  - `drive()` waits on the queue for up to half a second, so taps feel immediate without a busy loop.
+- **"Done" means an inbox row is visible,** the same signal `open_outlook` waits for. It doesn't mean "the URL is Outlook": NUS sign-in hops through several hosts, and saving too early would save half the cookies.
+- **Saved, then checked:** `manager.save` as always, then a second, separate context opens Outlook with what was saved. Only if that works do you get "Logged in ✅".
+- **Nothing is kept:** screenshots and keystrokes live in memory, the request log is switched off (`log_message`), and the bot logs only "sign-in page opened/closed".
+
+- **Render needs a port open all the time** (a deploy without one fails). There, `serve` starts the same server once (`start_always`), with a handler that asks "which window is open?" (`_active`). With none, every path is 404, so the server says nothing about itself. `/login` sets `_active` for the 10 minutes instead of opening a new server. Railway and your PC keep the open-only-while-signing-in behaviour.
+
+`ponytail:` screenshots every half second, not a video stream. That's fine for something you do every few months; CDP's `Page.startScreencast` is the upgrade if it ever feels slow.
 
 ---
 
@@ -1498,6 +1549,7 @@ Every numbered step also prints a progress line (`[00:17] Loading Focused tab 28
 | Cookies, full emails | Only your PC (browser + encrypted archive) |
 | Email text for labelling | NUS SoC's AI endpoint (in-house) |
 | Digest (summaries) | Telegram (not end-to-end encrypted) |
+| Your password and MFA (only during `/login`) | Your browser → HTTPS → the server's Chromium → Microsoft; never stored or logged |
 
 **The honest limit:** the encryption key lives in `.env` on the same PC. Encryption protects copies of `data/`; it can't protect against someone using your Windows account. That trade-off was chosen so the unattended morning job works without a password.
 
@@ -1528,6 +1580,7 @@ Each module with real logic has one small test script, `tests/test_<module>.py`:
 | `test_index` | chunking (header fields, quote trimming, size and count caps); incremental updates (no re-embedding, changed and pruned emails); status; hybrid search with a fake embedder; sender, date and label filters; an over-strict filter is dropped; rebuild; a failing endpoint never raises |
 | `test_answer` | plan validation (swapped dates, junk values, fallback); reply parsing (unknown refs removed, only real attachments of known emails, the 3-file cap); HTML and plain rendering; the whole pipeline with a fake model (data tags, history capped) |
 | `test_bot` | strangers, groups and inactive destinations get nothing (not even button answers); questions reply with links, sources and attachment buttons (no inline logos); buttons fetch and send files, unknown ones say "expired"; `/new`, `/help`, `/sync`, `/label` parsing; a crash is answered politely; the CHAT switch |
+| `test_remote_login` | the token works once and becomes a cookie; GET never binds; wrong token/cookie/path → 404; expired → 404; `/frame` only with the cookie; input checks (bounds, length, key allowlist, JSON only); security headers; tap scaling in the page; the run loop applies inputs and stops on sign-in or timeout; https-only addresses |
 | `test_web_images` | https and public addresses only (private, loopback, link-local, CGNAT, IPv6, multicast, mixed and unresolvable hosts refused); downloads filtered by type and size, stopped by room, budget and 12 tries; a failing fetch is skipped; redirects never followed; `REMOTE_IMAGES` defaults on |
 | `test_rules` | `rules.json` checks (built-in name clashes, duplicates, missing labels/descriptions, bad priorities); whole-word course codes, only the start of the body; sender address/name and direct-only; topic tags, boosts with and without a profile, removed topics; adding replaces, save/load, a broken file raises |
 | `test_service` | every `RUN_AT` form parses (daily, weekdays, weekends, day lists, `day-N`, scopes) and bad ones are rejected; due runs: on time, not early, three days off = one catch-up, latest per scope (daily + weekly + monthly), nothing when done; next run across weekends and months; only `new` commits; the lock is exclusive and released |
@@ -1590,7 +1643,7 @@ Each of these was found by running against real Outlook, and each shaped the cod
 - Events from older mail need `labels retag`; dates the AI can't work out stay undated.
 - **Service logs are never pruned** (one small file per month); delete old ones by hand if you like.
 - The **Docker image hasn't been built yet** (to save disk); expect small fixes on the first build.
-- On a server, the Outlook login is **copied from your PC**, and Microsoft may expire logins from datacenter IPs sooner.
+- On a server you sign in through `/login` (section 7.24). Microsoft may expire logins from datacenter IPs sooner, and an organisation can block them outright.
 
 **Roadmap** (README §12):
 - **M4 ✅:** `MB: <category>` + `MB: P<priority>` labels in Outlook, coloured, applied every run, easy to clear (section 7.16). The session-expired alert came with M5.
