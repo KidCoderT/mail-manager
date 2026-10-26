@@ -208,6 +208,26 @@ def fetch_images(page, auth: dict, email: dict) -> list[str]:
     return urls
 
 
+def fetch_attachment(page, auth: dict, attachment_id: str) -> dict | None:
+    """One file attachment, read-only: {"name", "content_type", "data" (bytes)}, kept in memory only. None on failure."""
+    import base64
+
+    resp = _service_call(page, auth, "GetAttachment", lambda header: {
+        "__type": "GetAttachmentJsonRequest:#Exchange",
+        "Header": header,
+        "Body": {"__type": "GetAttachmentRequest:#Exchange",
+                 "AttachmentIds": [{"__type": "AttachmentId:#Exchange", "Id": attachment_id}]},
+    })
+    if resp is None or not resp.ok:
+        return None
+    for msg in resp.json().get("Body", {}).get("ResponseMessages", {}).get("Items", []):
+        for a in msg.get("Attachments") or []:
+            if a.get("Content"):
+                return {"name": a.get("Name") or "file", "content_type": a.get("ContentType") or "application/octet-stream",
+                        "data": base64.b64decode(a["Content"])}
+    return None
+
+
 def fetch_image_urls(page, auth: dict, emails: list[dict]) -> dict[str, list[str]]:
     """{email id: linked image URLs worth trying} via read-only GetItem of the HTML bodies. The HTML is parsed
     here and dropped. A failure just means no linked images this time."""

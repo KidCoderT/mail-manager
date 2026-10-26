@@ -5,6 +5,7 @@ section, then KEY EVENTS, NOISE, …); a section that is still too long is split
 "<HEADING> (cont.)" on the follow-ups. Every message of a multi-part digest is tagged "· k/n".
 """
 
+import html
 import json
 import os
 import re
@@ -27,6 +28,16 @@ class TelegramError(Exception):
 def size(text: str) -> int:
     """Length the way Telegram counts it: UTF-16 code units (an emoji counts as 2)."""
     return len(text.encode("utf-16-le")) // 2
+
+
+def visible(text: str) -> str:
+    """What an HTML-mode message shows: tags removed, &amp; etc. turned back into characters."""
+    return html.unescape(re.sub(r"<[^>]+>", "", text))
+
+
+def html_size(text: str) -> int:
+    """Telegram's limit counts the text after its HTML is parsed, so links don't use up room."""
+    return size(visible(text))
 
 
 def is_heading(line: str) -> bool:
@@ -77,7 +88,7 @@ def split_sections(text: str) -> list[list[str]]:
     blocks: list[list[str]] = [[]]
     seen_heading = False
     for line in text.splitlines():
-        if is_heading(line):
+        if is_heading(visible(line)):  # judged on what shows: an HTML heading line may carry a link
             if seen_heading:
                 blocks.append([])
             seen_heading = True
@@ -93,17 +104,20 @@ def _trim(lines: list[str]) -> list[str]:
     return lines
 
 
-def _chunk_block(lines: list[str]) -> list[str]:
-    """One block → messages ≤ LIMIT, split on line breaks; follow-ups start with '<HEADING> (cont.)'."""
-    heading = next((l.strip() for l in lines if is_heading(l)), None)
+def _chunk_block(lines: list[str], measure=size) -> list[str]:
+    """One block → messages ≤ LIMIT, split on line breaks; follow-ups start with '<HEADING> (cont.)'.
+    `measure` is html_size for HTML text: lines are never cut inside a tag (only absurdly long ones are cut)."""
+    heading = next((visible(l).strip() for l in lines if is_heading(visible(l))), None)
     cont = f"{heading.split('(')[0].rstrip(' :')} (cont.)" if heading else None
+    if cont and measure is html_size:
+        cont = html.escape(cont, quote=False)  # the copied heading is plain text; "&" must be "&amp;" here
     # Balanced, not greedy: 4100 units → two ~2050 messages, never 3990 + a lonely 110.
-    pieces_needed = -(-size("\n".join(lines)) // LIMIT)
-    target = min(LIMIT, -(-size("\n".join(lines)) // pieces_needed) + 200)
+    pieces_needed = -(-measure("\n".join(lines)) // LIMIT)
+    target = min(LIMIT, -(-measure("\n".join(lines)) // pieces_needed) + 200)
     chunks, current = [], []
     for line in lines:
-        for piece in (_hard_cut(line, LIMIT - 100) if size(line) > LIMIT - 100 else [line]):
-            if current and size("\n".join(current + [piece])) > target:
+        for piece in (_hard_cut(line, LIMIT - 100) if measure(line) > LIMIT - 100 else [line]):
+            if current and measure("\n".join(current + [piece])) > target:
                 chunks.append(current)
                 current = [cont] if cont else []
             current.append(piece)
@@ -112,32 +126,79 @@ def _chunk_block(lines: list[str]) -> list[str]:
     return ["\n".join(_trim(c)) for c in chunks if _trim(c)]
 
 
-def messages(text: str) -> list[str]:
+def messages(text: str, html_mode: bool = False) -> list[str]:
     """The Telegram messages for `text`: one if it fits, else one per section (split further if needed)."""
     text = text.strip()
-    if size(text) <= LIMIT:
+    measure = html_size if html_mode else size
+    if measure(text) <= LIMIT:
         return [text] if text else []
-    out = [m for block in split_sections(text) for m in _chunk_block(_trim(block))]
+    out = [m for block in split_sections(text) for m in _chunk_block(_trim(block), measure)]
     if len(out) > 1:  # "· k/n" on each first line, so a missing part is obvious
         out = [m.replace("\n", f" · {k}/{len(out)}\n", 1) if "\n" in m else f"{m} · {k}/{len(out)}"
                for k, m in enumerate(out, 1)]
     return out
 
 
-def send(chat_id: str, text: str) -> int:
-    """Send every message (paced). Keeps going past a failure; raises a summary if any failed. Returns the count."""
-    parts = messages(text)
+def send(chat_id: str, text: str, html: bool = False, buttons: list | None = None) -> int:
+    """Send every message (paced). Keeps going past a failure; raises a summary if any failed. Returns the count.
+    html=True: Telegram's HTML mode (links); a part Telegram can't parse is resent as plain text instead.
+    buttons: inline keyboard rows ([[{"text", "url" | "callback_data"}]]) under the last message."""
+    parts = messages(text, html_mode=html)
     failures = []
     for k, part in enumerate(parts, 1):
         if k > 1:
             time.sleep(PAUSE_S)
+        payload = {"chat_id": chat_id, "text": part, "disable_web_page_preview": True}
+        if html:
+            payload["parse_mode"] = "HTML"
+        if buttons and k == len(parts):
+            payload["reply_markup"] = {"inline_keyboard": buttons}
         try:
-            _api("sendMessage", {"chat_id": chat_id, "text": part, "disable_web_page_preview": True})
+            try:
+                _api("sendMessage", payload)
+            except TelegramError as e:
+                if not html or "parse" not in str(e).lower():
+                    raise
+                # Never lose the text over markup: same words, no links.
+                _api("sendMessage", {**{k2: v for k2, v in payload.items() if k2 != "parse_mode"}, "text": visible(part)})
         except TelegramError as e:
             failures.append(f"message {k} failed: {e}")
     if failures:
         raise TelegramError(f"sent {len(parts) - len(failures)}/{len(parts)}; " + "; ".join(failures))
     return len(parts)
+
+
+FILE_LIMIT = 50_000_000  # Telegram bots can send files up to 50 MB
+
+
+def send_file(chat_id: str, name: str, content_type: str, data: bytes, caption: str = "") -> None:
+    """Send a file from memory (never written to disk): images as photos, everything else as a document."""
+    if len(data) > FILE_LIMIT:
+        raise TelegramError(f"{name} is over Telegram's 50 MB limit for bots")
+    photo = content_type in ("image/png", "image/jpeg") and len(data) <= 10_000_000  # sendPhoto: 10 MB max
+    method, field = ("sendPhoto", "photo") if photo else ("sendDocument", "document")
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    if not token:
+        raise TelegramError("TELEGRAM_BOT_TOKEN is not set")
+    boundary = f"----mailbrief{int(time.time() * 1000)}"
+    safe_name = re.sub(r'["\r\n]', "_", name)
+    parts = [f'--{boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n{chat_id}\r\n'.encode()]
+    if caption:
+        parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n{caption[:1000]}\r\n'.encode())
+    parts += [f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"; filename="{safe_name}"\r\n'
+              f"Content-Type: {content_type or 'application/octet-stream'}\r\n\r\n".encode(), data,
+              f"\r\n--{boundary}--\r\n".encode()]
+    req = urllib.request.Request(f"https://api.telegram.org/bot{token}/{method}", data=b"".join(parts),
+                                 headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:  # never log the URL: it contains the token
+            json.load(r)
+    except urllib.error.HTTPError as e:
+        try:
+            body = json.loads(e.read() or b"{}")
+        except ValueError:
+            body = {}
+        raise TelegramError(f"{e.code} {body.get('description') or e.reason}") from None
 
 
 def find_chats() -> list[dict]:

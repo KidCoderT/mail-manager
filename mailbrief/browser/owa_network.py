@@ -155,7 +155,7 @@ IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp")
 IMAGE_MIN = 15_000     # attached images smaller than this are icons
 INLINE_MIN = 30_000    # inline images (in the body): signature logos are smaller, posters are hundreds of KB
 IMAGE_MAX = 5_000_000  # ponytail: bigger posters are skipped, not resized (resizing needs Pillow)
-IMAGES_PER_EMAIL = 5
+IMAGES_PER_EMAIL = 4  # the NUS endpoint refuses more: "At most 4 image(s) may be provided in one prompt"
 IMAGE_BUDGET = 8_000_000  # bytes of images per email, attachments and linked images together
 
 
@@ -168,6 +168,15 @@ def addresses(recipients: list | None) -> list[str]:
             if addr:
                 out.append(addr.lower())
     return out
+
+
+def attachment_list(attachments: list) -> list[dict]:
+    """Every file attachment's id, name, size, type and inline flag (never its content): what the chat can send.
+    Attached emails (ItemAttachment) aren't files and are left out."""
+    return [{"id": _id(a["AttachmentId"]), "name": a.get("Name") or "file", "size": a.get("Size") or 0,
+             "content_type": a.get("ContentType") or "", "inline": bool(a.get("IsInline"))}
+            for a in attachments or []
+            if _id(a.get("AttachmentId")) and "ItemAttachment" not in str(a.get("__type", ""))]
 
 
 def image_attachments(attachments: list) -> list[dict]:
@@ -244,6 +253,7 @@ def parse_items(response: dict) -> list[dict]:
                 "has_attachments": bool(it.get("HasAttachments")),
                 "attachment_names": [a.get("Name") for a in it.get("Attachments") or [] if a.get("Name")],
                 "image_attachments": image_attachments(it.get("Attachments")),
+                "attachments": attachment_list(it.get("Attachments")),
                 "to": addresses(it.get("ToRecipients")),
                 "cc": addresses(it.get("CcRecipients")),
                 "is_read": bool(it.get("IsRead")),
@@ -288,6 +298,7 @@ def preview_records(conversations: list[dict]) -> list[dict]:
         "has_attachments": c["has_attachments"],
         "attachment_names": [],
         "image_attachments": [],
+        "attachments": [],
         "to": [],
         "cc": [],
         "is_read": None,

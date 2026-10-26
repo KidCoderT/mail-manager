@@ -4,9 +4,12 @@ Every saved inbox email's classification.events, next EVENTS_DAYS days (default 
 day. 🆕 = from this digest's emails, ⭐ = from a boosted email (your rules), listed first within its day.
 """
 
+import html as _html
 import os
 import re
 from datetime import date, timedelta
+
+from mailbrief import links
 
 DEFAULT_DAYS = 14
 
@@ -39,7 +42,8 @@ def upcoming(emails: list[dict], today: date, window: int, new_ids=(), your_rule
             d = date.fromisoformat(ev["date"]) if ev.get("date") else None
             if (d is None and e["id"] not in new_ids) or (d is not None and not first <= d <= last):
                 continue
-            item = {**ev, "new": e["id"] in new_ids, "boosted": boosted, "from": e.get("sender_name") or ""}
+            item = {**ev, "new": e["id"] in new_ids, "boosted": boosted, "from": e.get("sender_name") or "",
+                    "email_id": e["id"]}  # merged events keep the first email's id (for the ↗ link)
             old = merged.get(_key(ev))
             if old is None:
                 merged[_key(ev)] = item
@@ -62,12 +66,15 @@ def _time_key(t: str | None) -> int:
     return h * 60 + mins
 
 
-def _line(ev: dict, today: date) -> list[str]:
+def _line(ev: dict, today: date, html_mode: bool = False) -> list[str]:
+    esc = (lambda t: _html.escape(t, quote=False)) if html_mode else (lambda t: t)
     mark = ("⭐" if ev["boosted"] else "") + ("🆕" if ev["new"] else "") or "•"
-    head = " · ".join(x for x in (ev.get("time"), ev["name"], ev.get("place")) if x)
+    head = esc(" · ".join(x for x in (ev.get("time"), ev["name"], ev.get("place")) if x))
+    if html_mode and ev.get("email_id"):
+        head += f" {links.anchor(ev['email_id'])}"  # ↗ opens the email that announced it
     lines = [f"{mark} {head}"]
     if ev.get("detail"):
-        lines.append(f"   {ev['detail']}")
+        lines.append(f"   {esc(ev['detail'])}")
     signup = ev.get("signup_deadline")
     is_past = bool(ev.get("date")) and date.fromisoformat(ev["date"]) < today
     tail = []
@@ -77,13 +84,14 @@ def _line(ev: dict, today: date) -> list[str]:
     if ev.get("link"):
         tail.append(ev["link"])
     if tail:
-        lines.append("   " + " · ".join(tail))
+        lines.append("   " + esc(" · ".join(tail)))
     return lines
 
 
-def render(events: list[dict], today: date, window: int = DEFAULT_DAYS, past: int = 0) -> str | None:
+def render(events: list[dict], today: date, window: int = DEFAULT_DAYS, past: int = 0, html: bool = False) -> str | None:
     """The message text, or None when there's nothing to show. Day headings are uppercase (past days get a
-    "(PAST)" note), so long messages split per day in telegram.messages()."""
+    "(PAST)" note), so long messages split per day in telegram.messages(). html=True: Telegram HTML, every event
+    ending with a ↗ link to its email."""
     if not events:
         return None
     if not past:
@@ -105,12 +113,13 @@ def render(events: list[dict], today: date, window: int = DEFAULT_DAYS, past: in
             heading = "DATE NOT GIVEN"
         out += ["", heading]
         for ev in sorted(group, key=lambda e: (not e["boosted"], _time_key(e.get("time")), e["name"].lower())):
-            out += _line(ev, today)
+            out += _line(ev, today, html)
     return "\n".join(out)
 
 
-def build(today: date, new_ids=(), log=None) -> str | None:
-    """The events message from the saved archive and your rules. Never raises: events are a bonus."""
+def build(today: date, new_ids=(), log=None, html: bool = False) -> str | None:
+    """The events message from the saved archive and your rules (html=True: for Telegram, with ↗ links).
+    Never raises: events are a bonus."""
     from mailbrief import archive, rules
 
     window = days()
@@ -121,7 +130,7 @@ def build(today: date, new_ids=(), log=None) -> str | None:
             your_rules = rules.load()
         except rules.RulesError:
             your_rules = rules.empty()
-        return render(upcoming(archive.load()[0], today, window, new_ids, your_rules), today, window)
+        return render(upcoming(archive.load()[0], today, window, new_ids, your_rules), today, window, html=html)
     except Exception as e:  # noqa: BLE001
         if log:
             print(f"warning: events message not built ({type(e).__name__}: {e})", file=log)

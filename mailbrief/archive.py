@@ -112,7 +112,7 @@ def months() -> list[str]:
 
 
 def save(emails: list[dict], results: list[dict], digest: str | None, plain: bool, tz,
-         now: datetime | None = None, digest_scope: str = "new") -> list[Path]:
+         now: datetime | None = None, digest_scope: str = "new", digest_refs: dict | None = None) -> list[Path]:
     """Merge emails (by id, with their classification) into month files; the digest goes into this month's."""
     _migrate()
     now = now or datetime.now(tz)
@@ -127,7 +127,8 @@ def save(emails: list[dict], results: list[dict], digest: str | None, plain: boo
         data = _load_month(month)
         _merge(data, new)
         if digest and month == f"{now:%Y-%m}":
-            data["digests"].append({"at": now.isoformat(), "scope": digest_scope, "text": digest})
+            data["digests"].append({"at": now.isoformat(), "scope": digest_scope, "text": digest,
+                                    **({"refs": digest_refs} if digest_refs else {})})  # [n] → email id, for links
         paths.append(_write_month(month, data, plain))
     return paths
 

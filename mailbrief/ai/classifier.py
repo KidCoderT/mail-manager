@@ -1,6 +1,7 @@
 """Pass 1: classify one email (text, plus image attachments when there are any)."""
 
 import os
+import urllib.error
 import re
 from datetime import date
 
@@ -127,7 +128,13 @@ def classify(email: dict, images: list[str], context: list[str] | None = None, r
         model = os.environ.get("AI_CLASSIFIER_MODEL", "qwen3.6:35b")
         content = text
     for _ in range(2):  # one retry on invalid output
-        reply = complete(model, [{"role": "user", "content": content}], max_tokens=3000)  # events lists run long
+        try:
+            reply = complete(model, [{"role": "user", "content": content}], max_tokens=3000)  # events lists run long
+        except urllib.error.HTTPError as e:
+            if not images or e.code != 400:
+                raise
+            # The endpoint refused the images (count, size, format): classify from the text rather than never.
+            return classify(email, [], context, rules)
         result = validate(extract_json(reply), topics, email["received_at"].date())
         if result:
             return {**result, "model": model}

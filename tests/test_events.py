@@ -106,6 +106,18 @@ def test_long_calendar_splits_per_day():
     assert all(p.splitlines()[0].startswith(("📅", "THU", "FRI", "SAT", "SUN", "MON", "TUE", "WED")) for p in parts)
 
 
+def test_html_links():
+    from mailbrief.links import anchor
+    emails = [mail(1, [ev("Talk <live> & Q&A", "2026-10-23", detail="Pizza & drinks")]),
+              mail(2, [ev("Talk <live> & Q&A", "2026-10-23", place="LT19")])]
+    found = upcoming(emails, TODAY, 14)
+    assert found[0]["email_id"] == "m1"  # merged: the first email's link
+    lines = render(found, TODAY, 14, html=True).splitlines()
+    assert lines[3] == f"• Talk &lt;live&gt; &amp; Q&amp;A · LT19 {anchor('m1')}"
+    assert lines[4] == "   Pizza &amp; drinks"
+    assert "<a " not in render(found, TODAY, 14)  # plain text (terminal) has no links
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

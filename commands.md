@@ -16,6 +16,7 @@ Run all commands from the project folder (`mail-manager/`). They are run with **
 - [10. Files the commands create](#10-files-the-commands-create)
 - [11. Recipes: common workflows](#11-recipes)
 - [12. Exit codes at a glance](#12-exit-codes-at-a-glance)
+- [13. Ask your inbox: `index`, `chat`, `bot` and the Telegram chat](#13-ask-your-inbox)
 
 ---
 
@@ -101,7 +102,7 @@ It **never** deletes, moves, sends or marks anything as read. The only thing it 
 5. **Picks conversations** whose latest email is on or after the cursor time.
 6. **Fetches every message** in those conversations, in any folder, so your Sent replies are included. It uses Outlook's own read-only `GetItem` call, 20 at a time.
 7. **Selects the new inbox emails:** received ≥ cursor, ID not already processed, not sent by you.
-8. **Collects images**, but only for emails that still need the AI, in memory only, at most 5 images and 8 MB per email:
+8. **Collects images**, but only for emails that still need the AI, in memory only, at most 4 images (the endpoint's limit) and 8 MB per email:
    - attached images of 15 KB–5 MB and inline ones (posters in the body) of 30 KB–5 MB, through `GetAttachment`;
    - with `REMOTE_IMAGES=on` (the default), **linked images**: a read-only GetItem reads the emails' HTML, keeps https image URLs that don't look like icons, logos or trackers, and downloads them with safety checks (no local-network addresses, no redirects, size and type limits). The senders' image servers see your IP. Details: README §3.10.
 9. **Saves the refreshed session.** Microsoft rotates cookies, so saving keeps the login alive longer.
@@ -211,6 +212,7 @@ uv run mailbrief run --json | python -m json.tool  # pretty-print / validate
 
 #### `--send`
 Sends the digest to every active destination in `data/destinations.json` (see `add-destination`).
+- **Every bullet ends with ↗ links** to the emails it's about; tap one to open that email in Outlook. The AI writes `[3]`-style refs, and code turns them into links (section 13). Saved digests keep the refs, so `emails --digest --send` resends them with links.
 - **Fits in one message** (≤ 4,000 units): sent as one message.
 - **Too long:** sent as **one message per section**:
   - the `📬` header line plus the first section, then `DEADLINES & MEETINGS`, `KEY EVENTS`, `NOISE` and so on;
@@ -523,7 +525,9 @@ uv run mailbrief labels retag --period this-month    # optional: events (and top
 uv run mailbrief add-destination telegram [--chat-id ID]
 ```
 
-**What it does:** registers where digests are sent. Destinations can **only** be added this way, from your own machine: the bot never listens for messages, so nobody can sign themselves up.
+**What it does:** registers where digests are sent, and (from M7) who may chat with the bot. Destinations can **only** be added this way, from your own machine. The chat listener answers only these private chats, so nobody can sign themselves up.
+
+**While `serve` is running:** its chat listener is also reading the bot's messages (`getUpdates`), so the interactive lookup can come back empty or clash (Telegram allows one reader at a time). Stop `serve` first (`mailbrief stop`), or use `--chat-id`.
 
 ### Interactive (recommended)
 1. Create a bot with **@BotFather** (`/newbot`) and put `TELEGRAM_BOT_TOKEN=` in `.env`.
@@ -711,6 +715,10 @@ uv run python tests/test_labels.py        # label names, keeping your categories
 uv run python tests/test_rules.py         # your own labels: rules.json checks, course/sender/direct matching, topics, floors, boosts
 uv run python tests/test_events.py        # the calendar: 14-day window, undated only when new, merging, ⭐/🆕, layout, per-day splitting
 uv run python tests/test_web_images.py    # linked images: https + public addresses only, no redirects, type/size/budget/tries limits
+uv run python tests/test_links.py         # Outlook links: the URL format, [n] refs → ↗ links, escaping (no links from email text)
+uv run python tests/test_index.py         # search index: chunking, incremental updates, pruning, hybrid search, filters, never raises
+uv run python tests/test_answer.py        # chat answers: plan checks, citation clean-up, file requests checked, rendering, history cap
+uv run python tests/test_bot.py           # Telegram chat: only your private chats, buttons, files, commands, /label parsing, errors
 uv run python tests/test_service.py       # RUN_AT parsing (and rejecting bad ones), catch-up/due runs, next run, run flags, locks
 ```
 All of them in one go (Git Bash):
@@ -750,6 +758,9 @@ uv add <package>      # updates pyproject.toml + uv.lock and installs it
 | `OUTLOOK_LABELS` | `on` | `off` stops `run` from labelling emails in Outlook (section 5) |
 | `REMOTE_IMAGES` | `on` | `off` stops downloading images linked from email bodies (the senders' image servers see your IP when they're fetched). Events then come from text and attached/inline images only |
 | `EVENTS_DAYS` | `14` | How many days ahead the UPCOMING EVENTS calendar looks; `0` stops `run --send` from sending it |
+| `CHAT` | `on` | `serve` answers questions from your registered private Telegram chats (section 13). `off` keeps the bot send-only |
+| `AI_EMBED_MODEL` | `bge-m3` | The model that turns emails and questions into search vectors. Changing it rebuilds the index on the next update |
+| `AI_ANSWER_MODEL` | `qwen3.8:27b` | The model that writes chat answers (thinking on) |
 | `RUN_AT` | `daily 07:30` | When `serve` runs, and which digest each time (format in section 7) |
 
 Listed in `.env.example` but **not used by the code yet** (planned for later milestones): `FALLBACK_AGENT`, `DATABASE_URL`, `RESTORE_UNREAD` (`SORT_MODE` is replaced by `OUTLOOK_LABELS`; a "move to folders" mode is M6).
@@ -761,6 +772,7 @@ Listed in `.env.example` but **not used by the code yet** (planned for later mil
 | File | Created by | Contents | Sensitive? |
 |---|---|---|---|
 | `data/session.enc` | `login`, refreshed by every `run` | Outlook cookies + browser identity, encrypted | **Yes**: full mailbox access |
+| `data/index.enc` | every `run`, `index update/rebuild`, `labels retag` | Search vectors for chat (one set per email, plus a hash). No email text: it's recomputed from the archive | Yes (encrypted) |
 | `data/rules.json` | `rules add/remove/profile` (or you, by hand) | Your own labels: profile, courses, senders, topics | No (rules only, no email content) |
 | `data/cursor.json` | `run --commit`, `run --backfill` | Newest processed time + last 500 email IDs | No (IDs only) |
 | `data/archive/YYYY-MM.enc` | every `run` | That month's emails, classifications, digests, encrypted | Yes (encrypted) |
@@ -877,4 +889,84 @@ uv run mailbrief login
 | `emails` | success | bad number / can't decrypt | bad `--day` |
 | `events` | done / nothing found | archive unreadable / not delivered | bad `--days` / `--past` |
 | `rules` | done | rule not found / rules.json unreadable | bad rule |
+| `index` | done | archive unreadable / nothing indexed | (n/a) (3 = run in progress) |
+| `chat` | done | no index yet / archive unreadable | (n/a) |
+| `bot` | stopped | (n/a) | chat off / no bot token (3 = serve is running) |
 | `add-destination` | added | no chats / bad choice | unknown type |
+
+---
+
+## 13. Ask your inbox
+
+Ask questions about your email and get answers built only from your saved emails, with quotes, sources and ↗ links that open each email in Outlook. In Telegram (through `serve`) or in the terminal (`mailbrief chat`). Design: README §3.9.
+
+### Setup, once
+```
+uv run mailbrief run --backfill        # right after a morning run: all older inbox mail, recipients, attachment ids
+uv run mailbrief index rebuild         # the search index (about 30-60 s for ~400 emails)
+uv run mailbrief chat "any hackathons this month?"    # try it in the terminal
+uv run mailbrief serve                 # Telegram: now message your bot a question
+```
+- `CHAT=on` (the default) and a `TELEGRAM_BOT_TOKEN` are all the chat needs. Your chat must be a destination (section 6).
+- In @BotFather, keep `/setjoingroups` → **Disable**.
+- After this, every run keeps the index current by itself.
+
+### `mailbrief index status|update|rebuild`
+```
+uv run mailbrief index status     # counts only: emails, chunks, model, size, last update
+uv run mailbrief index update     # embed what's new or changed (runs do this themselves)
+uv run mailbrief index rebuild    # embed everything again (e.g. after changing AI_EMBED_MODEL)
+```
+- **What's indexed:** every saved email with full text (inbox mail and your own replies). Per email, a header chunk (subject, sender, date, summary, labels, attachment names, events) plus the body without quoted history, cut into about 1,500-character chunks (at most 6).
+- **Sends email text to `AI_BASE_URL`** (the NUS endpoint, `bge-m3`): the same in-house endpoint classification uses. About 30 chunks a second.
+- **Stored encrypted** in `data/index.enc`: vectors and hashes only, no email text. Safe to delete; `rebuild` recreates it.
+- **Incremental:** only new or changed emails are embedded; emails pruned from the archive are dropped.
+- Takes the run lock, so it never runs alongside a run (exit 3).
+- Exit codes: 0 done, 1 the archive can't be read (or nothing could be indexed), 3 a run is in progress.
+
+### `mailbrief chat ["question"]`
+```
+uv run mailbrief chat "when is the CS1101S midterm?"    # one question
+uv run mailbrief chat                                    # keep asking; an empty line (or Ctrl+C) stops
+```
+- Prints the answer with `[n]` refs, then the numbered **Sources** with each email's Outlook link. If nothing was cited, it shows the **Closest matches** instead.
+- Follow-up questions work within one session ("and what can I bring?").
+- If the answer would send a file in Telegram, it says which.
+- Needs the index (exit 1 without it). No Outlook is opened.
+
+### How a question is answered
+1. **Plan:** the cheap model turns the question and today's date into a search plus filters (sender, date range, labels, "is this about events?").
+2. **Find:** filters in code, then ranking by meaning and keywords. Event and deadline questions ("what's on this week?", "anything due soon?") take their date range from the events' and deadlines' dates; questions about the emails themselves ("what did X send last week?") use arrival dates.
+3. **Answer:** the strong model gets the best ~12 emails (with thread context) as data. It must cite every fact, quote exact wording where it matters, and say so when the emails don't answer.
+4. **Check:** code drops refs to emails it wasn't given, and only sends files that really are attachments of cited emails.
+
+### The Telegram chat
+Runs inside `mailbrief serve` (or alone with `mailbrief bot`, for testing). It long-polls Telegram, so no webhook and no open port.
+- **Only your registered private chats** (active Telegram destinations) get answers. Everyone else, and every group, is ignored without a reply.
+- **Each answer** has ↗ links on its claims, a **Sources** list where each line opens that email, and buttons for the sources' attachments.
+- **Tap an attachment button** and the file is fetched from Outlook (read-only, 5-10 s) and sent to the chat, from memory, never saved. If a run is using Outlook right then, you're asked to tap again in a minute. Buttons expire when `serve` restarts.
+- **Ask for a file** ("send me the seating plan") and it's sent after the answer, checked against the cited emails.
+- **Memory:** the last 3 questions and answers per chat, in memory only. `/new` forgets them.
+- **Logs** (`data/logs/`) record counts and timings, never questions or answers.
+
+| Command | What it does |
+|---|---|
+| `/help` (or `/start`) | What the bot can do |
+| `/new` | Forget this conversation |
+| `/sync` | Check for new mail now: a normal run with `--send`, so the digest arrives as usual |
+| `/digest` | Send the latest saved digest again (with links), then the events calendar |
+| `/events [days]` | The upcoming-events calendar (default 14 days) |
+| `/labels` | Your label rules (as `mailbrief rules list`) |
+| `/label add course CS2040S [p2] [boost]` | Add a course rule |
+| `/label add sender a@b.c "Prof X" [direct] [boost] [p1]` | Add a sender rule (`direct`: only mail where you're the only To recipient) |
+| `/label add topic Networking "career fairs, meetups" [p2]` | Add an AI topic |
+| `/label remove course\|sender\|topic KEY` | Remove a rule (old emails keep its label) |
+| `/profile text` | Set your profile |
+
+### `mailbrief bot`
+Runs just the Telegram listener in the foreground, without the scheduler, until Ctrl+C. Useful for testing the chat. It refuses to start while `serve` is running (exit 3), since `serve` already listens and Telegram allows one reader at a time. Exit 2 if `CHAT=off` or there's no bot token.
+
+### Privacy and safety
+- **More reaches Telegram than with the digest:** quotes from your emails, and files you ask for. Telegram bot chats aren't end-to-end encrypted. `CHAT=off` turns chat off entirely.
+- **The answering model reads email bodies,** so a malicious email could try to steer an answer. It has no tools, can only reply in your chat, and never writes links: code builds every link from email ids and escapes the model's text.
+- **The ↗ links** only work for someone signed in to your mailbox. Opening an email marks it read, as Outlook always does. Outlook usually gives a moved email a new id, so links to mail you've since moved or archived may stop working.

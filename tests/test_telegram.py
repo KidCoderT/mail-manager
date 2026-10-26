@@ -1,6 +1,7 @@
 import re
 
-from mailbrief.notify.telegram import LIMIT, is_heading, messages, size
+from mailbrief.notify import telegram
+from mailbrief.notify.telegram import LIMIT, TelegramError, html_size, is_heading, messages, size, visible
 
 TAG = re.compile(r" · \d+/\d+$")
 
@@ -67,6 +68,44 @@ def test_heading_detection():
         assert is_heading(h), h
     for not_h in ("• NOISE item", "NUS AI Institute", "Dear students,", "OK", "📬 3 new emails — FYI 3", "- KEY EVENTS", ""):
         assert not is_heading(not_h), not_h
+
+
+def test_html_mode():
+    link = '<a href="https://outlook.office.com/owa/?ItemID=x&amp;exvsurl=1">↗</a>'
+    assert visible(f"• Pay &amp; go {link}") == "• Pay & go ↗" and html_size(f"a {link}") == 3
+    # Links don't count towards the limit: 60 lines × (60 visible + ~70 link chars) still fits one message.
+    text = "\n".join(f"• {'x' * 58} {link}" for _ in range(60))
+    assert size(text) > LIMIT and html_size(text) <= LIMIT and messages(text, html_mode=True) == [text]
+    # Long HTML digests split per section, on headings judged by what they show, with "&" escaped in (cont.).
+    body = "\n".join(f"• item {i} {'y' * 70} {link}" for i in range(70))
+    parts = messages(f"📬 header\n\nDEADLINES &amp; MEETINGS\n{body}", html_mode=True)
+    assert len(parts) > 1 and all(html_size(p) <= LIMIT for p in parts)
+    assert any(p.startswith("DEADLINES &amp; MEETINGS (cont.)") for p in parts)
+    assert all(p.count("<a ") == p.count("</a>") for p in parts)  # never cut inside a link
+
+
+def test_send_html_buttons_and_parse_fallback():
+    calls = []
+
+    def fake_api(method, payload=None):
+        calls.append(payload)
+        if payload.get("parse_mode") == "HTML" and "bad" in payload["text"]:
+            raise TelegramError("400 Bad Request: can't parse entities")
+        return {"ok": True}
+
+    real, telegram._api = telegram._api, fake_api
+    try:
+        buttons = [[{"text": "📎 a.pdf", "callback_data": "a:1"}]]
+        assert telegram.send("1", 'hi <a href="u">↗</a>', html=True, buttons=buttons) == 1
+        assert calls[-1]["parse_mode"] == "HTML" and calls[-1]["reply_markup"] == {"inline_keyboard": buttons}
+        calls.clear()
+        telegram.send("1", "bad <b>markup", html=True)
+        assert calls[-1]["text"] == "bad markup" and "parse_mode" not in calls[-1]  # resent as plain text
+        calls.clear()
+        telegram.send("1", "plain")
+        assert "parse_mode" not in calls[-1] and "reply_markup" not in calls[-1]
+    finally:
+        telegram._api = real
 
 
 if __name__ == "__main__":

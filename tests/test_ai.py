@@ -63,6 +63,17 @@ def test_events():
     assert '"events"' in PROMPT and "Received date" in PROMPT
 
 
+def test_digest_refs():
+    from datetime import datetime
+    from mailbrief.ai import digest
+    from mailbrief.rules import empty
+    emails = [{"id": f"id{i}", "sender_name": "A", "sender_email": "a@x", "subject": "s", "body_text": "",
+               "received_at": datetime(2026, 10, 20, 9), "conversation_id": "c"} for i in (1, 2)]
+    items = digest._items(emails, [{"category": "FYI", "priority": 3}] * 2, empty())
+    assert [i["ref"] for i in items] == [1, 2] and digest.refs(emails) == {1: "id1", 2: "id2"}
+    assert '"ref"' in digest._COMMON and "[3][7]" in digest._COMMON
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

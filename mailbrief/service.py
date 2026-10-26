@@ -268,6 +268,10 @@ def _serve(spec: str, schedule: list[dict]) -> int:
         return stopping.is_set()
 
     log(f"MailBrief service started (pid {os.getpid()}), schedule: {spec}")
+    from mailbrief.notify import bot
+
+    if bot.start(stopping):  # Telegram chat (M7) in a thread; CHAT=off or no token: send-only, as before
+        log("chat: on (only your registered private chats get answers)")
     announced, retry_at, attempts, done_now = None, None, 0, set()
     try:
         while not stop_wanted():

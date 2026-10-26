@@ -1,4 +1,5 @@
 import argparse
+import functools
 import json
 import os
 import sys
@@ -43,7 +44,9 @@ def run(
     from mailbrief import archive, progress, threads
     from mailbrief import cursor as cur
     from mailbrief.ai.classifier import classify
+    from mailbrief import links
     from mailbrief.ai.digest import digest
+    from mailbrief.ai.digest import refs as digest_refs
     from mailbrief.browser.connect import get_browser
     from mailbrief.browser.outlook_reader import collect_images, fetch_emails, read_inbox
     from mailbrief.session import manager
@@ -247,6 +250,12 @@ def run(
         labels.run_step(
             log
         )  # MB: labels in Outlook for whatever is pending; never fails the run
+        from mailbrief import index
+
+        progress.step("Updating the search index…")
+        added, _ = index.update(archive.load()[0], log)  # new mail becomes searchable in chat; never fails the run
+        if added:
+            print(f"Search index: {added} email(s) added", file=log)
 
     text, t_digest, digest_emails = None, 0.0, []
     if scope:
@@ -267,7 +276,7 @@ def run(
                 )
             t_digest = time.time() - t2
             try:
-                archive.save([], [], text, plain, tz, digest_scope=scope)
+                archive.save([], [], text, plain, tz, digest_scope=scope, digest_refs=digest_refs(digest_emails))
             except Exception as e:  # noqa: BLE001
                 saved_msg += f"; warning: digest not saved ({type(e).__name__}: {e})"
 
@@ -294,9 +303,10 @@ def run(
     # The UPCOMING EVENTS calendar goes with every digest: built by code from the saved archive (no AI).
     from mailbrief import events
 
-    events_text = events.build(datetime.now(tz).date(), [e["id"] for e in digest_emails], log) if text else None
+    new_ids = [e["id"] for e in digest_emails]
+    events_text = events.build(datetime.now(tz).date(), new_ids, log) if text else None
     if text and not quiet:
-        print(f"\n{text}\n", file=log)
+        print(f"\n{links.plain(text)}\n", file=log)
         if events_text:
             print(f"{events_text}\n", file=log)
     unclassified = sum(r["category"] == "Unclassified" for r in results)
@@ -311,9 +321,11 @@ def run(
     # Nothing to deliver (no --send, or no digest this run) counts as delivered.
     if send and text:
         progress.step("Sending the digest…")
-    delivered = deliver(text, log) if send and text else True
+    # Telegram gets HTML: every bullet and event ends with ↗ links to its emails in Outlook.
+    delivered = deliver(links.to_html(text, digest_refs(digest_emails)), log, html=True) if send and text else True
     if send and text and delivered and events_text:
-        deliver(events_text, log)  # a failure is reported, but never holds back the cursor
+        events_html = events.build(datetime.now(tz).date(), new_ids, log, html=True)
+        deliver(events_html, log, html=True)  # a failure is reported, but never holds back the cursor
     if commit or backfill:
         if not delivered:
             print(
@@ -358,8 +370,9 @@ def digest_set(scope: str, targets: list[dict], cursor: dict, tz, log) -> list[d
     return emails
 
 
-def deliver(text: str, log) -> bool:
-    """Send to every active destination; True if at least one got it. One failure never blocks the others."""
+def deliver(text: str, log, html: bool = False) -> bool:
+    """Send to every active destination; True if at least one got it. One failure never blocks the others.
+    html=True: `text` is Telegram HTML (↗ links to the emails, see links.py)."""
     from mailbrief import destinations
     from mailbrief.notify import ADAPTERS
 
@@ -372,7 +385,7 @@ def deliver(text: str, log) -> bool:
     sent = 0
     for d in targets:
         try:
-            n = ADAPTERS[d["type"]](d["target"], text)
+            n = ADAPTERS[d["type"]](d["target"], text, html=html)
             sent += 1
             print(
                 f"Sent to {d['type']}: {d['label']} ({n} message{'s' if n != 1 else ''})",
@@ -418,6 +431,8 @@ def show_emails(period, day, search, show, thread, digest, export, send=False) -
         return 2
 
     if digest:
+        from mailbrief import links
+
         want = on_day or today
         found = [
             d
@@ -427,19 +442,21 @@ def show_emails(period, day, search, show, thread, digest, export, send=False) -
         for d in found:
             scope = d.get("scope", "new").replace("-", " ")
             print(
-                f"── {scope} digest, written {datetime.fromisoformat(d['at']).astimezone(tz):%d %b %H:%M} ──\n{d['text']}\n"
+                f"── {scope} digest, written {datetime.fromisoformat(d['at']).astimezone(tz):%d %b %H:%M} ──\n"
+                f"{links.plain(d['text'])}\n"
             )
         if not found:
             print(f"No digest saved for {want}.")
             return 1 if send else 0
         if send:  # resend the latest one, then today's events calendar: no Outlook, no AI
-            if not deliver(found[-1]["text"], sys.stdout):
-                return 1
-            from mailbrief import events
+            from mailbrief import events, links
 
-            events_text = events.build(today, (), sys.stdout)
-            if events_text:
-                deliver(events_text, sys.stdout)
+            last = found[-1]  # digests saved before M7 have no refs: they go out without links
+            if not deliver(links.to_html(last["text"], last.get("refs") or {}), sys.stdout, html=True):
+                return 1
+            events_html = events.build(today, (), sys.stdout, html=True)
+            if events_html:
+                deliver(events_html, sys.stdout, html=True)
             return 0
         return 0
 
@@ -795,19 +812,23 @@ def _retag(args, emails: list[dict], today, tz) -> int:
                 progress.count("Re-tagging", done, len(targets))
         archive.update_fields(changes)
         labels.run_step(sys.stdout)  # Outlook catches up straight away
+        from mailbrief import index
+
+        index.update(archive.load()[0], sys.stdout)  # new events / summaries become searchable
         return f"Re-tagged {len(changes)} of {len(targets)} email(s)."
 
     return _locked(work)
 
 
-def rules_command(args) -> int:
+def rules_command(args, out=None) -> int:
     """`mailbrief rules list|add|remove|profile`: your own labels in data/rules.json."""
+    say = functools.partial(print, file=out or sys.stdout)  # out: the chat bot's reply buffer
     from mailbrief import archive, rules
 
     try:
         current = rules.load()
     except rules.RulesError as e:
-        print(f"{e}\nFix {rules.RULES_PATH} by hand (it's plain JSON).")
+        say(f"{e}\nFix {rules.RULES_PATH} by hand (it's plain JSON).")
         return 1
     try:
         emails = archive.load()[0]
@@ -820,13 +841,13 @@ def rules_command(args) -> int:
         )
 
     if args.action == "list":
-        print(
+        say(
             f"Rules in {rules.RULES_PATH}"
             + ("" if rules.RULES_PATH.exists() else " (none yet)")
         )
-        print(f"Profile: {current['profile'] or '(none)'}")
+        say(f"Profile: {current['profile'] or '(none)'}")
         for kind in rules.KINDS:
-            print(f"\n{kind.capitalize()}:")
+            say(f"\n{kind.capitalize()}:")
             for r in current[kind]:
                 label = rules.label_name(kind, r)
                 extra = [
@@ -836,11 +857,11 @@ def rules_command(args) -> int:
                     f"match {r['match']!r}" if kind == "senders" else "",
                     f"“{r['description']}”" if kind == "topics" else "",
                 ]
-                print(
+                say(
                     f"  {label:24} {count(label):4} saved emails   {' · '.join(x for x in extra if x)}"
                 )
             if not current[kind]:
-                print("  (none)")
+                say("  (none)")
         return 0
 
     if args.action == "profile":
@@ -869,17 +890,17 @@ def rules_command(args) -> int:
             },
         }[kind]
         if kind == "senders" and not args.label:
-            print('A sender needs --label, e.g. --label "Prof Tan".')
+            say('A sender needs --label, e.g. --label "Prof Tan".')
             return 2
         if kind == "topics" and not args.description:
-            print(
+            say(
                 'A topic needs a description, e.g. rules add topic Networking "career fairs, meetups, hackathons".'
             )
             return 2
         try:
             new = rules.add(current, kind, rule)
         except rules.RulesError as e:
-            print(e)
+            say(e)
             return 2
         label = rules.label_name(kind, new[kind][-1])
         msg = f"✅ Added {label}."
@@ -892,7 +913,7 @@ def rules_command(args) -> int:
         kind = {"course": "courses", "sender": "senders", "topic": "topics"}[args.kind]
         new, gone = rules.remove(current, kind, args.key)
         if gone is None:
-            print(
+            say(
                 f"No {args.kind} {args.key!r} in your rules (see `mailbrief rules list`)."
             )
             return 1
@@ -902,10 +923,77 @@ def rules_command(args) -> int:
     try:
         rules.save(new)
     except rules.RulesError as e:
-        print(e)
+        say(e)
         return 2
-    print(f"{msg}\n{tail}")
+    say(f"{msg}\n{tail}")
     return 0
+
+
+def index_command(action: str) -> int:
+    """`mailbrief index status|update|rebuild`: the search index chat uses. Prints counts only."""
+    from mailbrief import archive, index
+
+    if action == "status":
+        s = index.status()
+        if not s["emails"]:
+            print("No search index yet: run `mailbrief index rebuild` (or wait for the next run).")
+            return 0
+        print(f"Search index: {s['emails']} emails, {s['chunks']} chunks, model {s['model']}, "
+              f"{s['bytes'] / 1e6:.1f} MB, updated {s['updated']}")
+        return 0
+    try:
+        emails = archive.load()[0]
+    except archive.ArchiveError as e:
+        print(e)
+        return 1
+    from mailbrief.service import Busy, lock
+
+    t0 = time.time()
+    try:
+        with lock("run"):  # one writer at a time: never alongside a run's own index update
+            added, removed = index.update(emails, sys.stdout, rebuild=action == "rebuild")
+    except Busy:
+        print("A MailBrief run is in progress; try again when it finishes.")
+        return 3
+    s = index.status()
+    print(f"Embedded {added} email(s), removed {removed}, in {time.time() - t0:.0f}s. "
+          f"Index: {s['emails']} emails, {s['chunks']} chunks, {s['bytes'] / 1e6:.1f} MB.")
+    return 0 if s["emails"] or not emails else 1
+
+
+def chat_command(question: str | None) -> int:
+    """`mailbrief chat ["question"]`: ask your saved emails, in the terminal. Memory lasts for this session only."""
+    from mailbrief import archive, index
+    from mailbrief.ai import answer
+
+    if not index.status()["emails"]:
+        print("No search index yet: run `mailbrief index rebuild` first.")
+        return 1
+    history: list[tuple[str, str]] = []
+    today = datetime.now(_tz()).date()
+    while True:
+        q = question
+        if q is None:
+            try:
+                q = input("\nAsk (empty line to stop): ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return 0
+            if not q:
+                return 0
+        try:
+            emails = archive.load()[0]
+        except archive.ArchiveError as e:
+            print(e)
+            return 1
+        t0 = time.time()
+        result = answer.ask(q, history, today, emails)
+        print(f"\n{answer.render(result)}\n\n({time.time() - t0:.0f}s)")
+        if result["send"]:
+            print("Files it would send in Telegram: " + ", ".join(a["name"] for _, a in result["send"]))
+        history.append((q, result["text"]))
+        if question is not None:
+            return 0
 
 
 def events_command(days: int | None, send: bool, past: int = 0) -> int:
@@ -935,7 +1023,7 @@ def events_command(days: int | None, send: bool, past: int = 0) -> int:
         print(f"No events in {span}.")
         return 0
     if send:
-        return 0 if deliver(text, sys.stdout) else 1
+        return 0 if deliver(events.render(found, today, window, past, html=True), sys.stdout, html=True) else 1
     print(text)
     return 0
 
@@ -1166,6 +1254,11 @@ def main() -> None:
         help='set who you are and what you want, e.g. "Year 2 CS student looking for internships"',
     )
     prof_p.add_argument("text", help='your profile ("" clears it)')
+    idx_p = sub.add_parser("index", help="the search index chat uses (data/index.enc): status, rebuild")
+    idx_p.add_argument("action", choices=["status", "update", "rebuild"])
+    chat_p = sub.add_parser("chat", help="ask your saved emails a question in the terminal (as the Telegram chat does)")
+    chat_p.add_argument("question", nargs="?", help="one question; leave out to keep asking (empty line or Ctrl+C ends)")
+    sub.add_parser("bot", help="run only the Telegram chat listener in the foreground (serve runs it too)")
     ev_p = sub.add_parser("events", help="upcoming events found in your saved emails (no Outlook, no AI)")
     ev_p.add_argument("--days", type=int, metavar="N", help="how far ahead (default EVENTS_DAYS, 14; 0 = none, with --past)")
     ev_p.add_argument("--past", type=int, default=0, metavar="N", help="also show events from the last N days")
@@ -1221,6 +1314,14 @@ def main() -> None:
         sys.exit(rules_command(args))
     if args.command == "events":
         sys.exit(events_command(args.days, args.send, args.past))
+    if args.command == "index":
+        sys.exit(index_command(args.action))
+    if args.command == "chat":
+        sys.exit(chat_command(args.question))
+    if args.command == "bot":
+        from mailbrief.notify import bot
+
+        sys.exit(bot.run_foreground())
     if args.command in ("serve", "stop", "status", "autostart"):
         from mailbrief import service
 
