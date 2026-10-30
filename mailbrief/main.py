@@ -5,7 +5,7 @@ import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -27,6 +27,17 @@ def _needs_ai(stored: dict | None) -> bool:
         None,
         "Unclassified",
     )
+
+
+RETRY_DAYS = 7  # an email the AI failed on is retried by every run for this long
+
+
+def failed_ids(archived: dict, now: datetime) -> set[str]:
+    """Inbox emails the AI failed on lately: every run retries them, even though the cursor has moved past.
+    ponytail: no failure count; one that keeps failing is retried for RETRY_DAYS, then left alone."""
+    return {i for i, e in archived.items()
+            if e.get("in_inbox") and (e.get("classification") or {}).get("category") == "Unclassified"
+            and now - e["received_at"] <= timedelta(days=RETRY_DAYS)}
 
 
 def run(
@@ -79,6 +90,10 @@ def run(
 
     cursor = cur.load()
     start = None if show_all else cur.since(cursor)
+    retry = failed_ids(archived, datetime.now(timezone.utc))
+    retry_convs = {archived[i].get("conversation_id") for i in retry}
+    if retry:
+        print(f"Retrying {len(retry)} email(s) the AI failed on earlier", file=log)
     t0 = time.time()
     with sync_playwright() as p:
         browser = get_browser(p, headless=True)
@@ -95,12 +110,12 @@ def run(
             convs = [
                 c
                 for c in result["messages"]
-                if start is None or c["received_at"] >= start
+                if start is None or c["received_at"] >= start or c["id"] in retry_convs
             ]
             records, full_text = fetch_emails(page, result["auth"], convs, result["me"])
             inbox = [r for r in records if r["in_inbox"] and not r["from_me"]]
             targets = sorted(
-                inbox if show_all else cur.select_new(inbox, cursor),
+                inbox if show_all else cur.select_new(inbox, cursor, retry),
                 key=lambda r: r["received_at"],
             )
             todo = [e for e in targets if _needs_ai(archived.get(e["id"]))]
@@ -259,7 +274,7 @@ def run(
 
     text, t_digest, digest_emails = None, 0.0, []
     if scope:
-        digest_emails = digest_set(scope, targets, cursor, tz, log)
+        digest_emails = digest_set(scope, targets, cursor, tz, log, retry)
         if digest_emails:
             t2 = time.time()
             parts = (len(digest_emails) + 24) // 25 if len(digest_emails) > 40 else 1
@@ -341,14 +356,14 @@ def run(
     return 0
 
 
-def digest_set(scope: str, targets: list[dict], cursor: dict, tz, log) -> list[dict]:
+def digest_set(scope: str, targets: list[dict], cursor: dict, tz, log, retry=frozenset()) -> list[dict]:
     """The emails a digest of `scope` covers: new since the cursor, or an archive period ("all" = everything)."""
     from mailbrief import archive
     from mailbrief import cursor as cur
 
     if scope == "new":
         emails = cur.select_new(
-            targets, cursor
+            targets, cursor, retry
         )  # with --all, targets is the whole inbox; the digest stays on new mail
     else:
         today = datetime.now(tz).date()

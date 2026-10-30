@@ -243,10 +243,11 @@ class Bot:
                 self.say(chat_id, "A MailBrief run is using Outlook right now; send /login again in a minute.")
             except ValueError as e:  # PUBLIC_URL isn't https
                 self.say(chat_id, str(e))
-            except OSError:  # the port is taken or blocked
-                _log("sign-in page failed (port)")
-                self.say(chat_id, f"Couldn't open the sign-in page on port {remote_login.port()}: it's in use or blocked. "
-                                  "Set PORT to another number and try /login again.")
+            except OSError as e:  # the port is taken or blocked, or the tunnel didn't start
+                _log("sign-in page failed (tunnel)" if "cloudflared" in str(e) else "sign-in page failed (port)")
+                self.say(chat_id, f"Couldn't open the sign-in page: {e}. Try /login again." if "cloudflared" in str(e) else
+                         f"Couldn't open the sign-in page on port {remote_login.port()}: it's in use or blocked. "
+                         "Set PORT to another number and try /login again.")
             except Exception as e:  # noqa: BLE001
                 _log(f"sign-in page failed ({type(e).__name__})")
                 self.say(chat_id, "The sign-in page failed (it's in the log). Send /login to try again.")

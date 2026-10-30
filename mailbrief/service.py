@@ -185,6 +185,7 @@ def _run_child(scope: str) -> int:
         extra = {"start_new_session": True}
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                             env={**os.environ, "PYTHONIOENCODING": "utf-8"}, **extra)
+    _children.add(proc)  # serve waits for (or kills) these when it stops, /sync runs included
 
     def copy_output():
         with log_path().open("a", encoding="utf-8") as f:
@@ -213,8 +214,13 @@ def _run_child(scope: str) -> int:
     except KeyboardInterrupt:  # second Ctrl+C: stop now, run included
         proc.kill()
         raise
+    finally:
+        _children.discard(proc)
     reader.join(timeout=5)
     return code
+
+
+_children: set = set()  # runs started by _run_child that haven't finished
 
 
 def _alert_login(state: dict) -> None:
@@ -324,7 +330,13 @@ def _serve(spec: str, schedule: list[dict]) -> int:
                 if stop_wanted():
                     break
                 time.sleep(1)
+        if _children:  # a /sync run (bot thread): it would outlive serve, without its 45-minute limit
+            log("waiting for the /sync run to finish (press Ctrl+C again to stop it now)")
+            while _children:
+                time.sleep(1)
     except KeyboardInterrupt:
+        for proc in list(_children):
+            proc.kill()
         log("stopped immediately")
         return 130
     finally:

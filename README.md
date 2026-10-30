@@ -572,7 +572,7 @@ mail-manager/
 AI_BASE_URL=https://soclaas-api.comp.nus.edu.sg/v1
 # AI_API_KEY=...                  # optional; falls back to the SOCLAAS_API_KEY system env var
 AI_CLASSIFIER_MODEL=qwen3.6:35b
-AI_VISION_MODEL=qwen3.8:27b
+AI_VISION_MODEL=qwen3.6:35b
 AI_DIGEST_MODEL=qwen3.8:27b
 
 # Browser: empty = local Chromium (default); set to use Browserless later
@@ -638,11 +638,13 @@ AI_ANSWER_MODEL=qwen3.8:27b     # writes the cited answers
 | Image downloads (linked images in emails) | The senders' image servers | They see your IP address and when MailBrief read the mail. `REMOTE_IMAGES=off` stops it |
 | Text for search vectors | `AI_BASE_URL` (`bge-m3`) | Same in-house endpoint as classification |
 | Everything the browser sees | Browserless | **Only if** `BROWSER_WS_URL` is set. Self-hosted stays local; cloud is a third party |
+| Session, archive, index, logs (`data/`) **and** `SESSION_ENCRYPTION_KEY` | Your own machine by default. On a **cloud host** (Railway, Render): that host | **Only if** you deploy there (§9). The whole table above assumes "your machine" *is* your PC |
 
 **Rules**
 - `storage_state` files act as **passwords** for the mailbox: encrypt them at rest (Fernet/AES), keep them out of git, and use file permissions of `600`.
 - The Telegram bot token, AI key and `BROWSER_WS_URL` (it can contain a token) live in `.env` or a secrets manager only. Never log them.
 - **Browserless cloud sends work data to a third party** (US servers). Get employer/IT approval and a data-processing agreement first. Logging in locally and then uploading the session does **not** avoid this, because the cookies still go to the cloud.
+- **A cloud host is a third party too, for the same reasons** (§9: Railway, Render). The volume holds your mail archive, your search index and a live Outlook session, and `SESSION_ENCRYPTION_KEY` is an environment variable on that same host, so **it holds both the ciphertext and the key**. Encryption at rest protects a stolen copy of `data/`, not the host running the code. Treat deploying to a cloud host as the same decision as Browserless cloud: your own server (or your own always-on PC) keeps it in-house, and the hosted options need the same employer/IT check. The region matters as well: pick one near you, or Microsoft and NUS see a foreign address on every run.
 - **Email content is untrusted.** Models that read it have no tools. The fallback agent never runs with an email body open, and its actions pass through a code-enforced blocklist (§3.5).
 - **Telegram bot is send-only and locked down** (§3.6). Only chat IDs added via the local CLI receive digests. It also listens (M7), but acts only on those chats.
 - **The chat answer model reads email bodies** (§3.9), so an injected email could try to mislead an answer. It has no tools, can only reply in your chat, never writes links (code builds them from email ids), and any file it suggests is checked in code against the emails it cited.
@@ -660,6 +662,7 @@ AI_ANSWER_MODEL=qwen3.8:27b     # writes the cited answers
 | **Always-on local machine** (Windows/Linux PC, mini PC) with local Chromium | Trusted device, stable IP, longest sessions, data stays local, no Docker | Must stay powered and online |
 | Same machine + Browserless in Docker (later) | Browser isolated from the host, resource limits, debugger UI | Docker (WSL2 on Windows Home) and disk space for little gain with one user |
 | Browserless cloud (later, IT approval only) | No browser to run or maintain | Third-party data processing (§8), datacenter IP, more re-logins, plan limits on session length |
+| **Cloud host** (Railway, Render; IT approval only) | Always on with no machine of your own, `/login` from your phone | Third-party data processing (§8): the host holds `data/` **and** the key. Datacenter IP → more re-logins. Paid (Render needs a disk; free plans sleep) |
 
 **Recommendation for v1:** run locally on a machine the user already signs in from, and do the one-time login **on that machine**.
 
@@ -674,6 +677,8 @@ AI_ANSWER_MODEL=qwen3.8:27b     # writes the cited answers
   - Details: commands.md §2, `login --remote`.
 - **Render:** [commands.md §7 "Deploy on Render"](commands.md#deploy-on-render). It needs a paid instance and a disk, since the free plan sleeps and has no disk; `serve` keeps the port open there, answering 404 except during a sign-in.
 - **Railway:** step-by-step in [commands.md §7 "Deploy on Railway"](commands.md#deploy-on-railway): Singapore region, a volume at `/app/data`, then the first sign-in.
+
+> ⚠️ **Railway and Render are third-party hosts, not "local".** They hold your mail archive, your search index, a live Outlook session and `SESSION_ENCRYPTION_KEY` — both the ciphertext and the key (§8). They are the convenient option, not the private one: an always-on PC or your own server is what keeps mail in-house. Expect more re-logins from a datacenter IP, and check your employer's acceptable-use policy first.
 
 Steps: [commands.md §7 "Hosting"](commands.md#7-running-automatically). This is hosting **for yourself** only; hosting for other people is cancelled (§13).
 

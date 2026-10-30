@@ -122,7 +122,7 @@ def classify(email: dict, images: list[str], context: list[str] | None = None, r
         f"Attachments: {', '.join(email['attachment_names']) or 'none'}\n\n{trim_body(email['body_text'])}\n</email>"
     )
     if images:
-        model = os.environ.get("AI_VISION_MODEL", "qwen3.8:27b")
+        model = os.environ.get("AI_VISION_MODEL", "qwen3.6:35b")  # 5/5 on images; qwen3.8:27b crawls when the endpoint is busy
         content = [{"type": "text", "text": text}] + [{"type": "image_url", "image_url": {"url": u}} for u in images]
     else:
         model = os.environ.get("AI_CLASSIFIER_MODEL", "qwen3.6:35b")

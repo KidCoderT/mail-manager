@@ -26,10 +26,11 @@ def since(cursor: dict, now: datetime | None = None) -> datetime:
     return (now or datetime.now(timezone.utc)) - FIRST_RUN_LOOKBACK
 
 
-def select_new(records: list[dict], cursor: dict) -> list[dict]:
+def select_new(records: list[dict], cursor: dict, retry=frozenset()) -> list[dict]:
+    """Emails after the cursor, plus `retry`: earlier emails the AI failed on (main.failed_ids)."""
     start, seen = since(cursor), set(cursor["recent_ids"])
     # >= plus the id check: a second email at the exact cursor second is still picked up.
-    return [r for r in records if r["received_at"] >= start and r["id"] not in seen]
+    return [r for r in records if (r["received_at"] >= start and r["id"] not in seen) or r["id"] in retry]
 
 
 def advance(cursor: dict, records: list[dict]) -> dict:

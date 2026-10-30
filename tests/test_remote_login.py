@@ -1,6 +1,7 @@
 import http.client
 import json
 import os
+import sys
 import threading
 import time
 
@@ -109,6 +110,7 @@ def test_done_state_is_shown_then_frames_stop():
 class FakePage:
     def __init__(self, rows_after=None):
         self.did, self.rows_after = [], rows_after
+        self.url = "https://login.microsoftonline.com/common/oauth2"
         page = self
 
         class Mouse:
@@ -135,6 +137,28 @@ def test_drive_applies_inputs_until_signed_in():
         win.inputs.put(ev)
     assert rl.drive(win, page, lambda pg: len(pg.did) >= 3, step_s=0.01)
     assert page.did == [("click", 5, 6), ("type", "pw"), ("press", "Enter")] and win.frame == b"shot3"
+
+
+def test_outlook_itself_is_never_shown():
+    win = rl.Window()
+    page = FakePage()
+    page.url = "https://outlook.office.com/mail/"
+    win2 = rl.Window(ttl=0.05)
+    rl.drive(win2, page, lambda pg: False, step_s=0.01)
+    assert win2.hidden and win2.frame == b""
+    s = serve(win)
+    try:
+        cookie = bound(s, win)
+        win.hidden, win.frame = True, b""
+        assert json.loads(call(s, "GET", "/status", cookie=cookie)[2]) == {"state": "hidden"}
+        assert call(s, "GET", "/frame", cookie=cookie)[0] == 404
+    finally:
+        s.shutdown()
+        s.server_close()
+    page.url = "https://login.microsoftonline.com/x"  # back on a sign-in page: the picture returns
+    win3 = rl.Window(ttl=0.05)
+    rl.drive(win3, page, lambda pg: False, step_s=0.01)
+    assert not win3.hidden and win3.frame.startswith(b"shot")
 
 
 def test_drive_stops_when_the_window_closes():
@@ -216,6 +240,42 @@ def test_render_address_and_switch():
         os.environ.pop("RENDER")
         os.environ["LOGIN_PAGE"] = "always"
         assert rl.always_on()
+    finally:
+        for k, v in old.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+
+
+FAKE_CLOUDFLARED = ("import sys, time\n"
+                    "print('INF |  https://quiet-fox-12.trycloudflare.com  |', file=sys.stderr, flush=True)\n"
+                    "print('INF Registered tunnel connection', file=sys.stderr, flush=True)\n"
+                    "time.sleep(60)\n")
+
+
+def test_tunnel_reads_the_address_and_stops():
+    proc, url = rl.tunnel(1, cmd=[sys.executable, "-c", FAKE_CLOUDFLARED], wait_s=20, settle_s=0)
+    assert url == "https://quiet-fox-12.trycloudflare.com" and proc.poll() is None
+    rl.stop(proc)
+    assert proc.poll() is not None
+
+
+def test_tunnel_gives_up_cleanly():
+    try:
+        rl.tunnel(1, cmd=[sys.executable, "-c", "print('nothing')"], wait_s=20)
+        raise AssertionError("no address must raise")
+    except OSError as e:
+        assert "cloudflared" in str(e)
+
+
+def test_tunnel_is_opt_in():
+    old = {k: os.environ.get(k) for k in ("LOGIN_TUNNEL", "PUBLIC_URL")}
+    try:
+        for k in old:
+            os.environ.pop(k, None)
+        assert not rl.use_tunnel()
+        os.environ["LOGIN_TUNNEL"] = "cloudflared"
+        assert rl.use_tunnel()
+        os.environ["PUBLIC_URL"] = "https://my.example"
+        assert not rl.use_tunnel()  # an address you set wins
     finally:
         for k, v in old.items():
             os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)

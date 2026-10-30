@@ -93,6 +93,7 @@ The same as **`/login`** in Telegram. Use it when MailBrief runs on a server (Ra
 - **It works once.** Tapping Start uses up the token and gives *your* browser a random private cookie. Every later request needs that cookie, so a forwarded or copied link does nothing. Link previews can't use it up either.
 - **It's open for at most 10 minutes,** and closes as soon as you're signed in. Otherwise nothing listens at all.
 - **`https://` only.** It refuses any other address, so your password never crosses the internet unencrypted. The exception is `http://localhost`, for trying it on your PC, where it listens on this PC only.
+- **Your inbox is never shown.** Only Microsoft's sign-in pages are pictured; once Outlook itself opens, the picture is hidden.
 - **Nothing is written down.** Screenshots and your typing stay in memory, and logs only say "sign-in page opened/closed".
 - **It holds the run lock,** so a scheduled run waits for it, and vice versa: *"A MailBrief run is using Outlook right now"*.
 
@@ -102,12 +103,21 @@ The same as **`/login`** in Telegram. Use it when MailBrief runs on a server (Ra
 - **If the port is blocked:** Windows often reserves 8080, so on your PC without `PUBLIC_URL` it falls back to any free port, and the link shows which one.
 - **On a server,** or with `PUBLIC_URL` set, the port is never changed silently. A blocked port is reported instead: *"Couldn't open the sign-in page on port …"*.
 
+**Sign in from your phone while MailBrief runs on your PC:**
+1. Install cloudflared once: `winget install --id Cloudflare.cloudflared`.
+2. Add `LOGIN_TUNNEL=cloudflared` to `.env` and restart `serve`.
+3. Send `/login`. About 15 seconds later you get a `https://….trycloudflare.com` link that opens on your phone.
+
+- **How it works:** a Cloudflare quick tunnel to the page, which itself still listens on 127.0.0.1 only. It needs no account, and it's stopped when the sign-in ends, so the address dies with it.
+- **Privacy:** Cloudflare decrypts the traffic in the middle, your password included. That's why it's opt-in.
+- **If cloudflared is missing or doesn't connect within 30 s,** you get *"Couldn't open the sign-in page: cloudflared …"* (exit code 2).
+
 **Exit codes:**
 | Code | Meaning |
 |---|---|
 | 0 | Signed in |
 | 1 | Timed out, or the saved login didn't work |
-| 2 | `PUBLIC_URL` isn't `https://`, or the port is in use or blocked |
+| 2 | `PUBLIC_URL` isn't `https://`, the port is in use or blocked, or cloudflared didn't start |
 | 3 | A run is using Outlook |
 
 ---
@@ -137,9 +147,9 @@ It **never** deletes, moves, sends or marks anything as read. The only thing it 
    - waits for the message list (or detects a redirect to the Microsoft login page, which means the session expired: exit 2);
    - **scrolls the list with the mouse wheel** until every conversation is loaded, in the **Focused** tab and then the **Other** tab;
    - picks up your email address from Outlook's startup data.
-5. **Picks conversations** whose latest email is on or after the cursor time.
+5. **Picks conversations** whose latest email is on or after the cursor time, plus any holding an email the AI failed on in the last 7 days.
 6. **Fetches every message** in those conversations, in any folder, so your Sent replies are included. It uses Outlook's own read-only `GetItem` call, 20 at a time.
-7. **Selects the new inbox emails:** received ≥ cursor, ID not already processed, not sent by you.
+7. **Selects the new inbox emails:** received ≥ cursor, ID not already processed, not sent by you. **Emails the AI failed on** (saved as Unclassified) in the last 7 days are selected again, even though the cursor has moved past them, and are classified and put in this digest. The log says *"Retrying N email(s) the AI failed on earlier"*.
 8. **Collects images**, but only for emails that still need the AI, in memory only, at most 4 images (the endpoint's limit) and 8 MB per email:
    - attached images of 15 KB–5 MB and inline ones (posters in the body) of 30 KB–5 MB, through `GetAttachment`;
    - with `REMOTE_IMAGES=on` (the default), **linked images**: a read-only GetItem reads the emails' HTML, keeps https image URLs that don't look like icons, logos or trackers, and downloads them with safety checks (no local-network addresses, no redirects, size and type limits). The senders' image servers see your IP. Details: README §3.10.
@@ -147,7 +157,7 @@ It **never** deletes, moves, sends or marks anything as read. The only thing it 
 10. **Builds threads:** groups messages by conversation, orders them parent-before-reply, marks emails you already answered as `replied`.
 11. **Classifies** new emails with the AI, 4 conversations in parallel and each conversation's emails oldest first, so a reply sees its parent's summary:
     - text-only emails go to `AI_CLASSIFIER_MODEL` (qwen3.6:35b);
-    - emails with images go to `AI_VISION_MODEL` (qwen3.8:27b);
+    - emails with images go to `AI_VISION_MODEL` (qwen3.6:35b, which reads images too);
     - besides category and priority, each email's **events** are listed (name, one-line detail, date, time, place, link, sign-up deadline), from its text and images.
 12. **Saves** all fetched messages with their classifications to `data/archive/YYYY-MM.enc`. This happens *before* the digest, because a period digest reads them back from the archive.
 13. **Labels emails in Outlook** (unless `OUTLOOK_LABELS=off`): every archived inbox email whose `MB:` labels aren't what they should be, up to 400 per run. On the first run that's your whole archive; after that, just the new ones. A failure here only prints a warning. Details: section 5.
@@ -663,6 +673,8 @@ All three do the same thing:
 - **idle:** it stops within a second;
 - **in the middle of a run:** it **lets the run finish** (email saved, digest sent, cursor advanced) and then stops. `mailbrief stop` waits up to 10 s, then tells you it's finishing the current run.
 - **Ctrl+C a second time** stops immediately, killing the run.
+- **A `/sync` run counts too.** `serve` waits for it (*"waiting for the /sync run to finish"*) or kills it on a second Ctrl+C. Before this fix, a `/sync` run outlived `serve`, with no 45-minute limit, and later runs said *"Another MailBrief run is in progress"*.
+- **To stop only a run and keep `serve` going:** `Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%mailbrief.main run%'" | ForEach-Object { Stop-Process -Id $_.ProcessId }`.
 
 Even a hard kill (Task Manager → End task, a power cut, `kill -9`) is **safe**: every file is written atomically (to a `.tmp` file, then renamed), and the cursor only advances after delivery. The worst case is that the next run redoes that work, or very rarely the same digest arrives twice.
 
@@ -732,6 +744,10 @@ When the login expires, the Telegram alert says "send /login".
 The image needs about 2 GB of disk. Microsoft logins from a datacenter IP may expire sooner than from your PC.
 
 **Home server with Docker:** uncomment the `ports:` line in `compose.yaml` and set `PUBLIC_URL` to an `https://` address that reaches it. That means a reverse proxy or tunnel with TLS; the sign-in page itself speaks plain HTTP behind it.
+
+> ⚠️ **Before either recipe below: a cloud host sees your mail.** Railway and Render hold `data/` (archive, search index, Outlook session) on their volume, and `SESSION_ENCRYPTION_KEY` as one of their environment variables — so the host has both the ciphertext and the key. That's third-party data processing, the same decision as Browserless cloud (README §8), so check your employer's acceptable-use policy first. Your own always-on PC or your own server keeps mail in-house; these are the convenient option, not the private one.
+>
+> Two practical notes: both build the `Dockerfile` **directly and ignore `compose.yaml`**, so its `shm_size: 1gb` does *not* apply — Chromium on Docker's default 64 MB `/dev/shm` is the first thing to suspect if the browser crashes there. And a datacenter IP means Microsoft logins expire sooner than from your PC, each one costing a `/login` tap.
 
 ### Deploy on Railway
 1. **New project** → *Deploy from GitHub repo*. Railway builds the existing `Dockerfile`.
@@ -809,6 +825,7 @@ uv run python tests/test_links.py         # Outlook links: the URL format, [n] r
 uv run python tests/test_index.py         # search index: chunking, incremental updates, pruning, hybrid search, filters, never raises
 uv run python tests/test_answer.py        # chat answers: plan checks, citation clean-up, file requests checked, rendering, history cap
 uv run python tests/test_bot.py           # Telegram chat: only your private chats, buttons, files, commands, /label parsing, errors
+uv run python tests/test_ai_client.py     # AI client: gives up on no answer after 2 retries (120 s / 300 s thinking), waits out 429s, logs retries
 uv run python tests/test_remote_login.py  # sign-in page: one-time token → cookie, 404s, expiry, input checks, headers, https-only
 uv run python tests/test_service.py       # RUN_AT parsing (and rejecting bad ones), catch-up/due runs, next run, run flags, locks
 ```
@@ -840,8 +857,9 @@ uv add <package>      # updates pyproject.toml + uv.lock and installs it
 | `AI_BASE_URL` | `https://soclaas-api.comp.nus.edu.sg/v1` | Which OpenAI-compatible endpoint `run` calls |
 | `AI_API_KEY` / `SOCLAAS_API_KEY` | system env var | AI key (`AI_API_KEY` wins if set) |
 | `AI_CLASSIFIER_MODEL` | `qwen3.6:35b` | Classifies text-only emails |
-| `AI_VISION_MODEL` | `qwen3.8:27b` | Classifies emails with image attachments |
+| `AI_VISION_MODEL` | `qwen3.6:35b` | Classifies emails with image attachments |
 | `AI_DIGEST_MODEL` | `qwen3.8:27b` | Writes the digest (thinking on) |
+| `AI_FALLBACK_MODEL` | `qwen3.6:35b` | Used when another model gives no answer in time (one try, then this). Empty = never switch |
 | `TELEGRAM_BOT_TOKEN` | *(none)* | Needed by `add-destination` and `run --send` |
 | `DEFAULT_TIMEZONE` | `Asia/Singapore` | Displayed times, `--day`, periods, which month file an email goes in |
 | `ARCHIVE_DAYS` | `0` (forever) | If > 0, `run` deletes month files that ended more than this many days ago |
@@ -856,6 +874,7 @@ uv add <package>      # updates pyproject.toml + uv.lock and installs it
 | `PUBLIC_URL` | `$RENDER_EXTERNAL_URL` or `https://$RAILWAY_PUBLIC_DOMAIN`, else `http://localhost:$PORT` | The address in the `/login` sign-in link. Must be `https://` unless it's localhost |
 | `PORT` | `8080` (Railway and Render set it) | The port the sign-in page listens on, only while a sign-in is open (always on Render) |
 | `LOGIN_PAGE` | *(empty)*; automatic on Render | `always`: `serve` keeps the port open, answering 404 to everything except an open sign-in. For hosts that require an open port |
+| `LOGIN_TUNNEL` | *(empty)* | `cloudflared`: on your PC (no `PUBLIC_URL`), `/login` opens a temporary `https://….trycloudflare.com` tunnel so the link works on your phone. Cloudflare sees the traffic |
 
 Listed in `.env.example` but **not used by the code yet** (planned for later milestones): `FALLBACK_AGENT`, `DATABASE_URL`, `RESTORE_UNREAD` (`SORT_MODE` is replaced by `OUTLOOK_LABELS`; a "move to folders" mode is M6).
 
@@ -965,6 +984,8 @@ uv run mailbrief run --send --commit > run.log 2>&1
 ```
 uv run mailbrief login
 ```
+
+**A run is very slow, or the log says `AI: no answer from …`:** the AI service or your network isn't answering. Each AI call now gives up after 2 retries (at most about 6 min, or 15 for a long digest), so the run fails instead of hanging. A scheduled run retries by itself; after `/sync`, send it again later. `AI: busy (429)` lines just mean the shared service is rate-limiting, and they wait it out. `AI: qwen3.8:27b didn't answer…; using qwen3.6:35b instead` means the strong model was too slow, and the fast one wrote that part.
 
 **Start "new mail" tracking from scratch**: delete `data/cursor.json`. The next run looks back 24 h. The archive is unaffected and still prevents repeat AI calls.
 

@@ -564,8 +564,9 @@ Walks StartupData looking for `SessionSettings.UserEmailAddress`. **Why there?**
 ```
 load():          read data/cursor.json, or {nothing processed yet}
 since(cursor):   cursor time if there is one, else now − 24 hours   (first run)
-select_new(records, cursor):
-    keep records with received_at ≥ since(cursor) AND id not in recent_ids
+select_new(records, cursor, retry):
+    keep records with received_at ≥ since(cursor) AND id not in recent_ids,
+    or whose id is in retry (emails the AI failed on in the last 7 days: main.failed_ids)
 advance(cursor, records):
     refuse if any record is a "preview" (not full text)
     new time ← the newest of (old time, newest record)
@@ -636,8 +637,14 @@ function complete(model, messages, thinking=false, max_tokens):
     body ← {model, messages, temperature 0, max_tokens,
             chat_template_kwargs: {enable_thinking: thinking}}
     POST to AI_BASE_URL/chat/completions
-    on 429 (rate limited) or 5xx or timeout:
+    wait for an answer at most 300 s if thinking, else 120 s
+    on 429 (rate limited) or 5xx:
         wait 3, 6, 12, 24, 48 s (or what the server's Retry-After says), up to 5 retries
+    on no answer (timeout, no connection):
+        wait 3, then 6 s, up to 2 retries, then raise
+    print a line for every retry ("AI: busy…" / "AI: no answer…")
+    if model isn't AI_FALLBACK_MODEL (qwen3.6:35b): it gets ONE try;
+        no answer → print "AI: <model> didn't answer…; using <fallback> instead" and ask the fallback
     on other errors → raise
     text ← the reply; remove any <think>…</think> block
     return text
@@ -655,6 +662,12 @@ function extract_json(text):
 **Why strip `<think>` and use `extract_json`?** Models wrap JSON in code fences, add "Sure!" before it, or leak their thinking. Searching for the outermost `{…}` tolerates all of that.
 
 **Why the backoff?** The NUS endpoint is shared, and when hammered it answers **429 Too Many Requests**. The first backfill crashed on exactly that (section 12). Waiting and retrying is the polite, correct response.
+
+**Why only 2 retries, and shorter waits, when there's no answer at all?** A busy server (429) answers quickly and frees up soon. A server that doesn't answer is usually *down*, and stays down for a while. The first version waited 300 s per attempt with 5 silent retries, so one unanswered call could block a run for about 32 minutes (section 12, lesson 18). Now:
+- **The wait is sized to the job.** 120 s for normal calls, which answer in 1–6 s. 300 s only for the thinking merge, which legitimately takes minutes.
+- **There are 2 retries.** Worst case is about 6 minutes, or about 15 for the merge. That's under the run's 45-minute limit, so the run fails with a clear error, and the service's normal retry or your next `/sync` picks it up.
+- **A slow strong model falls back to the fast one.** The digest and chat use `qwen3.8:27b`, which on a busy day can crawl at 11 tokens/s. It gets one try. If it doesn't answer in time, the same request goes to `AI_FALLBACK_MODEL` (qwen3.6:35b, about 145 tokens/s). A busy day then costs about 5 minutes and a slightly plainer digest, instead of no digest. Refusals (400, 401) never fall back: they're not slowness.
+- **Every retry prints a line.** A run's output goes to the service log, so a stall shows up as *"AI: no answer from /chat/completions after 120s"* instead of silence. It names only the endpoint, never anything from your emails.
 
 ---
 
@@ -704,13 +717,15 @@ classify(email, images, context):
 **Why two models?** Benchmarks on the NUS endpoint (made-up emails only):
 | Model | Text accuracy | Image test | Speed | Role |
 |---|---|---|---|---|
-| qwen3.6:35b | 12/12 | 5/5 | ~2–4 s, short output | text classification: light (only ~3B parameters active), no thinking |
-| qwen3.8:27b | 12/12 | 5/5 | 1.7 s (thinking off) | images + digest: newest, strongest reasoner |
+| qwen3.6:35b | 12/12 | 5/5 | ~2–4 s, short output | text **and image** classification: light (only ~3B parameters active), no thinking |
+| qwen3.8:27b | 12/12 | 5/5 | 1.7 s (thinking off) | digest and chat answers: newest, strongest reasoner |
 | gemma4:26b | 12/12 | 5/5 | 12–16 s | too slow |
 | qwen3.5:9b | 0/6 | ✗ | 23 s | thinks until it runs out of tokens |
 | llama3.1:8b | 3/6 | can't take images | 4.6 s | too weak |
 
 Splitting the work spreads the load on a shared server and uses the strong model where it matters.
+
+**Why images moved to qwen3.6:35b.** In October 2026, `qwen3.8:27b` started crawling at busy times. It was measured at **11 tokens/s** (49/s a minute later), while `qwen3.6:35b` ran at 145/s. An image email's reply can be 3,000 tokens, which is over 4 minutes at that speed, so the same image email timed out every run. qwen3.6:35b scored 5/5 on images too, so it now does them. The strong model keeps the digest and chat answers, with a fallback (section 7.8).
 
 ---
 
@@ -1415,6 +1430,12 @@ The pieces, and why each is built that way:
 - **Nothing is kept:** screenshots and keystrokes live in memory, the request log is switched off (`log_message`), and the bot logs only "sign-in page opened/closed".
 
 - **Render needs a port open all the time** (a deploy without one fails). There, `serve` starts the same server once (`start_always`), with a handler that asks "which window is open?" (`_active`). With none, every path is 404, so the server says nothing about itself. `/login` sets `_active` for the 10 minutes instead of opening a new server. Railway and your PC keep the open-only-while-signing-in behaviour.
+- **Your inbox is never shown.** Once the browser is on `outlook.office.com` itself, `drive` keeps the picture to itself: `/frame` gives 404 and the page says *"Opening your inbox… the picture is hidden"*. It checks the address after each screenshot, so one taken just as Outlook opened is dropped too. It isn't sticky, because the first load passes through Outlook on its way to the sign-in page.
+- **A tunnel from your PC (`LOGIN_TUNNEL=cloudflared`).** A `localhost` link doesn't open on your phone, so `tunnel()` starts a Cloudflare quick tunnel to the page and uses its `https://….trycloudflare.com` address instead. The page still binds 127.0.0.1, and the cookie gets `Secure` since the browser now sees https. Points to know:
+  - **The pipe is drained all the time.** A thread keeps reading cloudflared's output for the whole run; a full pipe would freeze it.
+  - **It waits for "Registered tunnel connection", then 10 more seconds.** A brand-new name takes a few seconds to reach DNS, and a lookup that comes too early is cached as "doesn't exist" for minutes. That happened on NUS's resolver in testing.
+  - **The process is stopped in the same `finally` that closes the server,** so the address dies with the window. A tested request afterwards gets Cloudflare's 502.
+  - **It's opt-in,** because Cloudflare ends the https in the middle and so sees your password. Tailscale Serve is the private alternative: set `PUBLIC_URL` to its address.
 
 `ponytail:` screenshots every half second, not a video stream. That's fine for something you do every few months; CDP's `Page.startScreencast` is the upgrade if it ever feels slow.
 
@@ -1502,7 +1523,7 @@ Every numbered step also prints a progress line (`[00:17] Loading Focused tab 28
 | Outlook loads part of the list | Warning; rerun picks up the rest | Partial data is still useful, and reruns are safe |
 | Image download fails | Email classified as text only | Images are a bonus |
 | AI rate-limited (429) / 5xx | Backoff and retry up to 5 times | The shared server just needs a moment |
-| One AI call keeps failing | That email becomes Unclassified, run continues; retried next run | One email must not sink the run |
+| One AI call keeps failing | That email becomes Unclassified, run continues; every run retries it for 7 days (`failed_ids`), even past the cursor | One email must not sink the run |
 | Model returns bad JSON | One retry, then Unclassified | Never pass malformed data forward |
 | Digest model returns an empty answer | Retried without thinking; still empty → error, the step shows ✗ | A blank digest must never be shown or sent |
 | A step is slow | Live counter / spinner with seconds | You can tell "slow" from "stuck" |
@@ -1626,6 +1647,10 @@ Each of these was found by running against real Outlook, and each shaped the cod
 15. **The digest that never arrived.** A long digest silently failed to reach Telegram. The splitter counted Python characters with no margin (Telegram counts UTF-16), cut sections wherever the limit fell, didn't handle flood control, and reported only "HTTP Error 400". *Lessons:* measure limits the way the receiving system measures them, leave a margin, split on meaningful boundaries (sections, then lines), respect `retry_after`, and keep the remote system's error message: it usually tells you the fix.
 16. **The categorize button is a rule.** The probe showed that Outlook's own "Categorize" doesn't label the email: it creates an *always categorise this conversation* rule. Copying the UI blindly would have left server-side rules on hundreds of threads. *Lesson:* record what the system actually does before copying it, and copy the intent ("label this email"), not the button.
 17. **One slow batch lost a whole restore.** Re-labelling 360 emails right after deleting their categories hit a 30 s request timeout. Results were only saved at the very end, so the whole pass counted as failed. *Lessons:* keep partial progress per batch, allow slack on timeouts, and make operations idempotent: the retry finished in 24 s because done emails cost only a read.
+18. **The 40-minute classify.** During a short AI or network outage, a `/sync` sat on "Classifying 9/12" for 40 minutes, then hung writing the digest until the 45-minute watchdog killed it. The client waited 300 s per attempt and retried 5 times, silently, so each unanswered call could hold the run about 32 minutes. *Lessons:* size timeouts to the job, retry hangs only a couple of times (unlike rate limits), and log every retry so a stall is visible.
+19. **The orphaned `/sync`.** Stopping `serve` waited only for *scheduled* runs. A `/sync` run, started from the bot's thread, kept running on its own, with no 45-minute watchdog since that lived in `serve`, and held the run lock. Your next `run --send` said *"Another MailBrief run is in progress"*. The fix: `_run_child` records every child in `_children`; `serve` waits for them when stopping, and kills them on a second Ctrl+C. *Lesson:* every process you start needs an owner that outlives it, or kills it.
+20. **The slow strong model.** The stalls kept landing on the same image email and on the digest. Tests with made-up prompts ruled out prompt size, image size, thinking and concurrency. The real cause was the shared endpoint's `qwen3.8:27b` dropping to 11 tokens/s, against 145 for `qwen3.6:35b`. *Lessons:* measure tokens per second before blaming the input; give each job the fastest model that passes its benchmark; and when a slower, stronger model is worth having, give it a fallback rather than a longer timeout.
+21. **The retry that never came.** A failed email was saved as Unclassified with the promise "it will be retried next run". But the cursor advanced past it, the next run only read conversations newer than the cursor, and `select_new` never picked it again. Only `--all` would have. The fix: `failed_ids` lists recent Unclassified inbox emails, their conversations are fetched anyway, and `select_new(..., retry)` lets them through, so they're classified and land in that run's digest. *Lesson:* a promise like "retried later" needs a test that follows the email through the *next* run, cursor included.
 
 ---
 

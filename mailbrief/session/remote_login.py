@@ -15,7 +15,10 @@ import html
 import json
 import os
 import queue
+import re
 import secrets
+import shutil
+import subprocess
 import threading
 import time
 from http.cookies import SimpleCookie
@@ -29,6 +32,7 @@ MAX_BODY = 1000
 KEYS = ("Enter", "Tab", "Backspace", "Escape", "ArrowUp", "ArrowDown")
 COOKIE = "mb_login"
 LOCAL_HOSTS = ("localhost", "127.0.0.1")
+OUTLOOK_HOST = "outlook.office.com"  # INBOX_URL's host: pictures of it are never sent (your inbox)
 
 
 class Window:
@@ -41,6 +45,7 @@ class Window:
         self.secure = secure
         self.state = "open"  # open → done | closed
         self.frame = b""
+        self.hidden = False  # the browser is on Outlook itself: no picture
         self.inputs: queue.Queue = queue.Queue()
         self._lock = threading.Lock()
 
@@ -108,6 +113,9 @@ const post = (path, o) => fetch(path, {{method: 'POST', headers: {{'Content-Type
 function screen() {{ $('start').hidden = true; $('screen').hidden = false; msg('Sign in as usual. Tick "Stay signed in".'); tick(); }}
 async function tick() {{
   const s = await fetch('/status').then(r => r.ok ? r.json() : {{state: 'closed'}}).catch(() => ({{state: 'closed'}}));
+  if (s.state === 'hidden') {{ $('screen').hidden = true;
+    msg('Opening your inbox… the picture is hidden from here on, for privacy.'); return setTimeout(tick, 1000); }}
+  if ($('screen').hidden && s.state === 'open') return screen();
   if (s.state !== 'open') {{ $('screen').hidden = true;
     return msg(s.state === 'done' ? 'Signed in ✅ You can close this page.' : 'This sign-in window has closed. Send /login again if you still need to sign in.'); }}
   $('shot').src = '/frame?' + Date.now();
@@ -174,7 +182,7 @@ def handler(win):
                       "connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'"
                 self._send(200, PAGE.format(n=nonce).encode(), "text/html; charset=utf-8", {"Content-Security-Policy": csp})
             elif path == "/status" and self._mine(win):
-                self._send(200, json.dumps({"state": "done" if win.state == "done" else "open" if win.live() else "closed"}).encode(),
+                self._send(200, json.dumps({"state": "done" if win.state == "done" else ("hidden" if win.hidden else "open") if win.live() else "closed"}).encode(),
                            "application/json")
             elif path == "/frame" and win.live() and self._mine(win) and win.frame:
                 self._send(200, win.frame, "image/jpeg")
@@ -269,6 +277,63 @@ def start_always() -> int | None:
     return port()
 
 
+# ── a tunnel from your PC (LOGIN_TUNNEL=cloudflared) ────────────────────────────────────────────────────────────
+# On your PC the page is http://localhost, which your phone can't open. A Cloudflare quick tunnel gives it a random
+# https://….trycloudflare.com address for as long as the sign-in lasts. Opt-in: Cloudflare sees the traffic.
+TUNNEL_URL = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
+
+
+def use_tunnel() -> bool:
+    return os.environ.get("LOGIN_TUNNEL", "").lower() == "cloudflared" and not os.environ.get("PUBLIC_URL") \
+        and _always is None
+
+
+def stop(proc) -> None:
+    proc.terminate()
+    try:
+        proc.wait(5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+
+def tunnel(local_port: int, cmd: list | None = None, wait_s: float = 30,
+           settle_s: float = 10) -> tuple[subprocess.Popen, str]:
+    """Start cloudflared to 127.0.0.1:local_port; return it and its https address once it's connected."""
+    if cmd is None:
+        exe = shutil.which("cloudflared") or next(  # winget's spot, for terminals opened before the install
+            (p for p in (r"C:\Program Files (x86)\cloudflared\cloudflared.exe", r"C:\Program Files\cloudflared\cloudflared.exe")
+             if os.path.exists(p)), None)
+        if not exe:
+            raise OSError("cloudflared not found: install it (winget install Cloudflare.cloudflared) or remove LOGIN_TUNNEL")
+        cmd = [exe, "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{local_port}"]  # not "localhost": IPv6 misses
+    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                            text=True, encoding="utf-8", errors="replace")
+    lines: queue.Queue = queue.Queue()
+
+    def read():  # keeps draining for the whole run: a full pipe would freeze cloudflared
+        for line in proc.stderr:
+            lines.put(line)
+        lines.put(None)
+
+    threading.Thread(target=read, daemon=True).start()
+    url, ready, deadline = None, False, time.monotonic() + wait_s
+    while not (url and ready):
+        try:
+            line = lines.get(timeout=max(0.01, deadline - time.monotonic()))
+        except queue.Empty:
+            line = None
+        if line is None:
+            stop(proc)
+            raise OSError("cloudflared didn't start (no tunnel address)")
+        if (m := TUNNEL_URL.search(line)) and not url:
+            url = m.group(0)
+        ready = ready or "Registered tunnel connection" in line
+    # ponytail: a fixed wait. The new name takes a few seconds to reach DNS, and a lookup that's too early gets
+    # cached as "doesn't exist" for minutes (seen on NUS's resolver).
+    time.sleep(settle_s)
+    return proc, url
+
+
 def _apply(page, ev: dict) -> None:
     if ev["type"] == "click":
         page.mouse.click(ev["x"], ev["y"])
@@ -293,7 +358,11 @@ def drive(win: Window, page, signed_in, step_s: float = 0.5) -> bool:
             except Exception:  # noqa: BLE001 - a tap mid-navigation can miss; you just tap again
                 pass
         try:
-            win.frame = page.screenshot(type="jpeg", quality=60)
+            shot = page.screenshot(type="jpeg", quality=60)
+            # checked after the shot, so one taken just as Outlook opened is dropped too. Not sticky: the first load
+            # passes through Outlook on its way to the sign-in page.
+            win.hidden = urlparse(page.url).hostname == OUTLOOK_HOST
+            win.frame = b"" if win.hidden else shot
             if signed_in(page):
                 return True
         except Exception:  # noqa: BLE001 - mid-navigation; the next round works
@@ -322,8 +391,11 @@ def run(say, show_link, ttl: float = WINDOW_S) -> bool:
         else:
             server, url = listen(url, local, handler(win))
             threading.Thread(target=server.serve_forever, daemon=True).start()
-        ok = False
+        ok, proc = False, None
         try:
+            if server is not None and local and use_tunnel():
+                proc, url = tunnel(server.server_address[1])
+                win.secure = True  # your browser sees https now
             with sync_playwright() as p:
                 browser = get_browser(p, headless=True)
                 try:
@@ -346,6 +418,8 @@ def run(say, show_link, ttl: float = WINDOW_S) -> bool:
         finally:
             win.state = "done" if ok else "closed"
             time.sleep(2)  # the page's next status poll shows "Signed in ✅"
+            if proc is not None:
+                stop(proc)  # the trycloudflare address dies with the window
             if server is None:
                 _active = None  # back to 404 for everything
             else:
@@ -376,6 +450,8 @@ def run_cli() -> int:
     except OSError as e:
         if always_on():
             print("`serve` already holds the port here: send /login to your bot in Telegram instead.")
+        elif "cloudflared" in str(e):
+            print(e)
         else:
             print(f"Couldn't open the sign-in page on port {port()} ({e.strerror or e}). Set PORT to another number.")
         return 2
