@@ -318,6 +318,7 @@ Leaves out the per-email lines and the digest text. Only progress, counts and re
 | 2 | No saved session, or the session expired: run `mailbrief login` |
 | 3 | Another run is in progress (nothing done) |
 | 4 | Digest sent, but `--commit` refused because only list previews were available or the archive couldn't be saved. The cursor is kept, so those emails are read again next time. `serve` does **not** retry this, because a retry would just send the same digest again |
+| 5 | Outlook opened, but its inbox list couldn't be read (nothing parsed, and Outlook didn't say the inbox is empty). Usually Outlook changed its internal format: the endpoints seen are printed so the parser can be fixed |
 
 ---
 
@@ -997,7 +998,7 @@ uv run mailbrief login
 | Command | 0 | 1 | 2 |
 |---|---|---|---|
 | `login` | saved | (n/a) | (n/a) |
-| `run` | success | cursor not advanced | no session / session expired (3 = another run in progress, 4 = sent but cursor kept: previews only) |
+| `run` | success | cursor not advanced | no session / session expired (3 = another run in progress, 4 = sent but cursor kept: previews only or archive not saved, 5 = inbox list unreadable) |
 | `serve` | stopped normally | (n/a) | bad schedule (3 = already running, 130 = forced stop) |
 | `labels` | done / dry run | answered no / archive unreadable | bad options / login needed (3 = run in progress) |
 | `stop` / `status` | done | (n/a) | (n/a) |

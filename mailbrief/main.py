@@ -161,6 +161,9 @@ def run(
         )
         for url in result["urls"]:
             print(f"  {url}", file=log)
+        if result["total"] != 0:  # an empty inbox says 0; anything else means the list couldn't be read
+            print("Outlook's inbox list couldn't be read (its format may have changed), so this run failed.", file=log)
+            return 5  # not 0: `serve` must retry and then alert, not log "ok" on a run that saw nothing
     if not targets and scope in (None, "new"):
         print("No new emails, so no digest.", file=log)
         from mailbrief import labels
