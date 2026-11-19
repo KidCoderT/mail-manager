@@ -5,3 +5,12 @@ __pycache__/
 hs_err_pid*.log
 # email exports (mailbrief run --json > …, emails --export …): plain email text
 /*.json
+# encrypted sessions, archives and indexes, wherever a command was run from
+*.enc
+*.enc.tmp
+# tool caches and reports
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/

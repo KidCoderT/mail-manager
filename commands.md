@@ -813,7 +813,14 @@ Any other host that insists on an open port: set `LOGIN_PAGE=always`. The port i
 ## 8. Developer commands
 
 ### Run the tests
-Each test file is a plain script: `assert`s plus a `__main__` runner, with no test framework. It prints `ok` or raises:
+```
+uv sync                # installs the dev tools too (pytest, ruff)
+uv run pytest -q       # every test: no browser, no network, no Outlook account, no AI endpoint
+uv run ruff check mailbrief tests
+```
+GitHub runs the same three commands on Linux and Windows for every push (`.github/workflows/ci.yml`).
+
+Each test file is also a plain script (`assert`s plus a `__main__` runner), so one can be run on its own. It prints `ok` or raises:
 ```
 uv run python tests/test_owa_network.py   # Outlook JSON parsing, GetItem records, image filter, your-address lookup
 uv run python tests/test_cursor.py        # new-email selection, dedupe, cursor refusal on previews
@@ -829,15 +836,12 @@ uv run python tests/test_web_images.py    # linked images: https + public addres
 uv run python tests/test_links.py         # Outlook links: the URL format, [n] refs → ↗ links, escaping (no links from email text)
 uv run python tests/test_index.py         # search index: chunking, incremental updates, pruning, hybrid search, filters, never raises
 uv run python tests/test_answer.py        # chat answers: plan checks, citation clean-up, file requests checked, rendering, history cap
-uv run python tests/test_bot.py           # Telegram chat: only your private chats, buttons, files, commands, /label parsing, errors
+uv run python tests/test_bot.py           # Telegram chat: only your private chats, buttons, files, commands, /rule parsing, errors
 uv run python tests/test_ai_client.py     # AI client: gives up on no answer after 2 retries (120 s / 300 s thinking), waits out 429s, logs retries
 uv run python tests/test_remote_login.py  # sign-in page: one-time token → cookie, 404s, expiry, input checks, headers, https-only
 uv run python tests/test_service.py       # RUN_AT parsing (and rejecting bad ones), catch-up/due runs, next run, run flags, locks
 ```
-All of them in one go (Git Bash):
-```
-for t in tests/test_*.py; do echo -n "$t: "; uv run python $t || break; done
-```
+`tests/test_main.py` (run helpers and error messages) and `tests/test_files.py` (file replacement on Windows, key checks) work the same way.
 The tests need **no network, no Outlook and no AI**: they use made-up data shaped like the real responses.
 
 ### Help for any command

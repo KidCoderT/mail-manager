@@ -1,7 +1,20 @@
 [project]
 name = "mailbrief"
-version = "0.1.0"
-description = "AI morning email digest for Outlook on the web"
+version = "1.0.0"
+description = "Self-hosted AI morning digest, labels and inbox chat for Outlook on the web, delivered to Telegram"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["outlook", "email", "digest", "telegram-bot", "playwright", "llm", "self-hosted"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Communications :: Email",
+]
 authors = [
     { name = "Tejas", email = "62064506+KidCoderT@users.noreply.github.com" }
 ]
@@ -13,6 +26,12 @@ dependencies = [
     "tzdata>=2026.5",
 ]
 
+[project.urls]
+Homepage = "https://kidcodert.github.io/mail-manager/"
+Repository = "https://github.com/KidCoderT/mail-manager"
+Documentation = "https://github.com/KidCoderT/mail-manager/blob/main/commands.md"
+Changelog = "https://github.com/KidCoderT/mail-manager/blob/main/CHANGELOG.md"
+
 [project.scripts]
 mailbrief = "mailbrief.main:main"
 
@@ -22,3 +41,18 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-root = ""
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 140
+target-version = "py311"
+
+[tool.ruff.lint]
+# Real mistakes only (syntax, undefined and unused names): the code has its own style for the rest.
+select = ["E4", "E7", "E9", "F"]
+ignore = ["E731", "E741"]  # small lambdas and short loop names are used on purpose
