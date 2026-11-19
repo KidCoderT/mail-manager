@@ -57,6 +57,16 @@ def test_weekends_and_next_slot():
     assert next_slot(at("2026-10-17 09:00"), parse_schedule("day-31 09:00")) == at("2026-10-31 09:00")
 
 
+def test_due_slots_survive_a_clock_change():
+    london = ZoneInfo("Europe/London")
+    daily = parse_schedule("daily 07:30")
+    # last_done as serve stores it: ISO text, so a fixed +01:00 offset; the clocks went back on Sun 25 Oct.
+    last = datetime.fromisoformat("2026-10-24T07:30:00+01:00")
+    assert due_slots(datetime(2026, 10, 25, 6, 45, tzinfo=london), daily, last) == []
+    assert due_slots(datetime(2026, 10, 25, 7, 30, tzinfo=london), daily, last) == [
+        (datetime(2026, 10, 25, 7, 30, tzinfo=london), "new")]
+
+
 def test_run_args_commit_only_for_new():
     assert run_args("new") == ["run", "--send", "--quiet", "--commit"]
     assert run_args("this-week") == ["run", "--send", "--quiet", "--digest", "this-week"]

@@ -89,7 +89,8 @@ def _slots(schedule: list[dict], start: datetime, end: datetime):
 
 def due_slots(now: datetime, schedule: list[dict], last_done: datetime) -> list[tuple[datetime, str]]:
     """Slots missed since last_done, keeping only the latest per scope (3 days off → one 'new' digest, not 3)."""
-    start = max(last_done, now - timedelta(days=LOOKBACK_DAYS))
+    # In now's zone: last_done comes from ISO text with a fixed offset, which is an hour out after a clock change.
+    start = max(last_done, now - timedelta(days=LOOKBACK_DAYS)).astimezone(now.tzinfo)
     latest: dict[str, datetime] = {}
     for at, scope in _slots(schedule, start, now):
         latest[scope] = max(at, latest.get(scope, at))
