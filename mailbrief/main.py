@@ -75,6 +75,9 @@ def run(
     # The morning digest by default; a backfill writes none unless a scope is asked for explicitly.
     scope = digest_scope or (None if backfill else "new")
     log = sys.stderr if as_json else sys.stdout  # in --json mode stdout is pure JSON
+    from mailbrief.ai import client
+
+    client.settings()  # no endpoint or key: say so now (ConfigError), not after reading the whole inbox
     session = manager.load()
     if session is None:
         print("No saved session. Run `mailbrief login` first.", file=log)
@@ -824,6 +827,9 @@ def _retag(args, emails: list[dict], today, tz) -> int:
     if args.dry_run or not targets:
         print("Dry run: nothing changed." if args.dry_run else "Nothing to do.")
         return 0
+    from mailbrief.ai import client
+
+    client.settings()  # no endpoint or key: say so before asking, not after
     if not _confirm(args.yes):
         return 1
 

@@ -26,6 +26,7 @@ def patched(fake, fn, fallback=""):
     real_open, real_sleep = client.urllib.request.urlopen, client.time.sleep
     old = os.environ.get("AI_FALLBACK_MODEL")
     os.environ.setdefault("AI_API_KEY", "test")
+    os.environ.setdefault("AI_BASE_URL", "https://ai.example.com/v1")  # never called: urlopen is the fake
     os.environ["AI_FALLBACK_MODEL"] = fallback  # "" = never switch (the plain retry behaviour)
     client.urllib.request.urlopen, client.time.sleep = fake, lambda s: None
     try:
@@ -72,6 +73,27 @@ def test_dropped_connections_are_retried_and_waits_are_capped():
     assert client.time.sleep is real
     # A 200 that isn't a completion is an empty reply, not a KeyError.
     assert patched(Fake([{"error": "overloaded"}]), lambda: client.complete("m", [])) == ""
+
+
+def test_no_endpoint_or_key_is_a_clear_error_not_a_default():
+    from mailbrief import ConfigError
+
+    saved = {k: os.environ.pop(k, None) for k in ("AI_BASE_URL", "AI_API_KEY", client.LEGACY_KEY)}
+    try:
+        for missing, env in (("AI_BASE_URL", {"AI_API_KEY": "k"}), ("AI_API_KEY", {"AI_BASE_URL": "https://ai.example.com/v1"})):
+            os.environ.update(env)
+            try:
+                client.settings()
+                raise AssertionError(f"ran without {missing}")
+            except ConfigError as e:
+                assert missing in str(e)
+            for k in env:
+                os.environ.pop(k)
+        os.environ.update(AI_BASE_URL="https://ai.example.com/v1/", AI_API_KEY="k")
+        assert client.settings() == ("https://ai.example.com/v1/", "k")
+    finally:
+        for k, v in saved.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
 
 
 def test_other_errors_are_not_retried():

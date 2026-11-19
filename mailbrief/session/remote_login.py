@@ -387,7 +387,7 @@ def tunnel(local_port: int, cmd: list | None = None, wait_s: float = 30,
             url = m.group(0)
         ready = ready or "Registered tunnel connection" in line
     # ponytail: a fixed wait. The new name takes a few seconds to reach DNS, and a lookup that's too early gets
-    # cached as "doesn't exist" for minutes (seen on NUS's resolver).
+    # cached as "doesn't exist" for minutes (seen on a campus resolver).
     time.sleep(settle_s)
     return proc, url
 

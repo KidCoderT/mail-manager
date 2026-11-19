@@ -155,7 +155,7 @@ IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp")
 IMAGE_MIN = 15_000     # attached images smaller than this are icons
 INLINE_MIN = 30_000    # inline images (in the body): signature logos are smaller, posters are hundreds of KB
 IMAGE_MAX = 5_000_000  # ponytail: bigger posters are skipped, not resized (resizing needs Pillow)
-IMAGES_PER_EMAIL = 4  # the NUS endpoint refuses more: "At most 4 image(s) may be provided in one prompt"
+IMAGES_PER_EMAIL = 4  # many endpoints refuse more ("At most 4 image(s) may be provided in one prompt")
 IMAGE_BUDGET = 8_000_000  # bytes of images per email, attachments and linked images together
 
 

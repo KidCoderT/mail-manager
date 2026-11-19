@@ -10,15 +10,15 @@ import urllib.request
 
 from mailbrief import ConfigError
 
-DEFAULT_BASE_URL = "https://soclaas-api.comp.nus.edu.sg/v1"
 RETRIES = 5  # busy (429) or server errors: backoff 3, 6, 12, 24, 48 s
 MAX_WAIT_S = 120  # the longest a Retry-After is obeyed: a run holds the run lock while it waits
 # No answer: a timeout, a refused or reset connection, or a reply cut off half way.
 NO_ANSWER = (TimeoutError, urllib.error.URLError, ConnectionError, http.client.HTTPException)
 TIMEOUT_RETRIES = 2  # no answer at all: a hung endpoint usually stays hung, so give up within minutes
+LEGACY_KEY = "SOCLAAS_API_KEY"  # the key's name in the first setup: still read, so that install keeps running
 
 
-EMBED_BATCH = 64  # measured: 64 texts of ~1k chars in ~2 s on the NUS endpoint
+EMBED_BATCH = 64  # measured: 64 texts of ~1k chars in about 2 s
 
 
 def complete(model: str, messages: list[dict], thinking: bool = False, max_tokens: int = 1500) -> str:
@@ -33,7 +33,8 @@ def complete(model: str, messages: list[dict], thinking: bool = False, max_token
     }
     # a thinking merge legitimately takes minutes; anything else answers in seconds
     timeout = 300 if thinking else 120
-    fallback = os.environ.get("AI_FALLBACK_MODEL", "qwen3.6:35b")
+    # Default: your own fast model (the classifier's), so the fallback is always one your endpoint serves.
+    fallback = os.environ.get("AI_FALLBACK_MODEL", os.environ.get("AI_CLASSIFIER_MODEL", ""))
     if fallback and fallback != model:
         # The strong model gets one try: on the shared endpoint it sometimes crawls (11 tokens/s measured), and the
         # fast model is better than a run that never finishes.
@@ -63,13 +64,25 @@ def embed(texts: list[str], model: str | None = None) -> list[list[float]]:
     return out
 
 
+def settings() -> tuple[str, str]:
+    """(endpoint, key) from .env, or ConfigError saying what's missing. Commands call this before they open
+    Outlook, so a missing setting shows in a second, not after a minute of reading the inbox."""
+    base = (os.environ.get("AI_BASE_URL") or "").strip()
+    if not base:  # no built-in default: where your email text goes is your decision, never an assumption
+        raise ConfigError("AI_BASE_URL is not set: put your OpenAI-compatible endpoint in .env, "
+                          "e.g. AI_BASE_URL=http://localhost:11434/v1 (see .env.example)")
+    key = os.environ.get("AI_API_KEY") or os.environ.get(LEGACY_KEY)
+    if not key:
+        raise ConfigError("AI_API_KEY is not set: put your endpoint's key in .env "
+                          "(a local server that needs none still wants any value, e.g. AI_API_KEY=local)")
+    return base, key
+
+
 def _post(path: str, body: dict, timeout: float = 120, timeout_retries: int = TIMEOUT_RETRIES) -> dict:
     """POST JSON to the endpoint, backing off on rate limits (429) and server errors, and retrying a request that
     got no answer only `timeout_retries` times. Every retry is printed, so a stall shows in the log."""
-    key = os.environ.get("AI_API_KEY") or os.environ.get("SOCLAAS_API_KEY")
-    if not key:
-        raise ConfigError("No AI key: set AI_API_KEY or SOCLAAS_API_KEY")
-    url = os.environ.get("AI_BASE_URL", DEFAULT_BASE_URL).rstrip("/") + path
+    base, key = settings()
+    url = base.rstrip("/") + path
     req = urllib.request.Request(
         url,
         data=json.dumps(body).encode(),
