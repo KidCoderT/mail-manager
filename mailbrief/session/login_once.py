@@ -6,6 +6,9 @@ from mailbrief.session import manager
 
 
 def login_once() -> None:
+    from mailbrief.storage.crypto import check_key
+
+    check_key()  # before the browser opens: a bad key would otherwise only show after password and MFA
     with sync_playwright() as p:
         browser = get_browser(p, headless=False)
         context = browser.new_context()

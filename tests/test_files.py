@@ -35,6 +35,24 @@ def test_replace_waits_out_a_file_another_process_has_open():
             os.replace = real
 
 
+def test_a_missing_or_placeholder_key_is_explained():
+    from mailbrief import ConfigError
+    from mailbrief.storage import crypto
+
+    old = os.environ.get("SESSION_ENCRYPTION_KEY")
+    try:
+        for bad in ("", "...", "not-a-key"):
+            os.environ["SESSION_ENCRYPTION_KEY"] = bad
+            try:
+                crypto.check_key()
+                raise AssertionError(f"accepted {bad!r}")
+            except ConfigError as e:
+                assert "Fernet.generate_key" in str(e)  # says how to make one
+    finally:
+        os.environ.pop("SESSION_ENCRYPTION_KEY") if old is None else os.environ.__setitem__("SESSION_ENCRYPTION_KEY", old)
+
+
 if __name__ == "__main__":
+    test_a_missing_or_placeholder_key_is_explained()
     test_replace_waits_out_a_file_another_process_has_open()
     print("ok")
