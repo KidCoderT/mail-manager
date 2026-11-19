@@ -52,6 +52,8 @@ MailBrief:  • It is on "Saturday 7 Nov, 10:00, MPSH 2"  ↗ open
 
 ## Requirements
 
+Try the offline tour first: `uv sync`, then `uv run python demo/run.py`. It uses 15 invented emails in a temporary archive, requires no account or API key, and leaves your own data alone. Choose `events`, `email`, `thread`, `digest` or `chat` after the script name. Digest and chat examples are prewritten; archive and event views run the real code.
+
 - A **Microsoft 365** work or school account you read in Outlook on the web (`outlook.office.com`). Personal Outlook.com accounts are not supported.
 - An **OpenAI-compatible AI endpoint** with a chat model, a model that accepts images, and an embedding model: one your organisation runs, or a local server such as Ollama. There is no default: you choose where your email text goes.
 - A **Telegram bot** of your own (free, from @BotFather).
