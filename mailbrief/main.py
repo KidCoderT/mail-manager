@@ -248,18 +248,24 @@ def run(
     if todo:
         progress.step(f"Classifying {len(todo)} emails with the AI…")
     with ThreadPoolExecutor(AI_THREADS) as ex:
-        for future in as_completed([ex.submit(work, cid) for cid in ordered]):
-            batch = future.result()
-            done += len(batch)
-            pending += batch
-            progress.count("Classifying", done, len(todo))
-            if (
-                backfill and len(pending) >= BACKFILL_SAVE_EVERY
-            ):  # Ctrl+C keeps everything saved so far
-                archive.save(
-                    pending, [e["classification"] for e in pending], None, plain, tz
-                )
-                pending = []
+        try:
+            for future in as_completed([ex.submit(work, cid) for cid in ordered]):
+                batch = future.result()
+                done += len(batch)
+                pending += batch
+                progress.count("Classifying", done, len(todo))
+                if (
+                    backfill and len(pending) >= BACKFILL_SAVE_EVERY
+                ):  # Ctrl+C keeps everything saved so far
+                    archive.save(
+                        pending, [e["classification"] for e in pending], None, plain, tz
+                    )
+                    pending = []
+        except BaseException:  # Ctrl+C, or no AI key: don't let the queued conversations call the AI anyway
+            ex.shutdown(wait=False, cancel_futures=True)
+            if backfill and pending:  # keep what was classified since the last save
+                archive.save(pending, [e["classification"] for e in pending], None, plain, tz)
+            raise
     t_classify = time.time() - t1
 
     # Save before the digest: a period digest reads this run's emails back from the archive.
