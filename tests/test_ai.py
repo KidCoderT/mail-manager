@@ -28,6 +28,13 @@ def test_deadline_must_be_a_real_day():
     assert validate({**ok, "deadline": "soon"})["deadline"] is None
 
 
+def test_action_items_as_a_bare_string():
+    ok = {"category": "FYI"}
+    assert validate({**ok, "action_items": "Reply to Bob"})["action_items"] == ["Reply to Bob"]
+    assert validate({**ok, "action_items": ["a", "", None, 3]})["action_items"] == ["a", "3"]
+    assert validate({**ok, "action_items": {"x": 1}})["action_items"] == []
+
+
 def test_trim_body():
     reply = "Sounds good, see you then.\n\nOn Tue, 14 Oct 2026 at 10:00, Ana <ana@x.com> wrote:\n> old stuff"
     assert trim_body(reply) == "Sounds good, see you then."

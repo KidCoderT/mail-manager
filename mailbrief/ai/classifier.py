@@ -60,6 +60,12 @@ def _text(value, limit: int) -> str | None:
     return text[:limit] or None
 
 
+def _strings(value) -> list[str]:
+    """A list of strings from what should be one: a bare string is one item, not a list of its letters."""
+    items = [value] if isinstance(value, str) else value if isinstance(value, list) else []
+    return [str(a).strip() for a in items if a and str(a).strip()]
+
+
 def _date(value, received: date | None) -> str | None:
     """A YYYY-MM-DD within a year of the email (catches a wrong year), else None."""
     if not isinstance(value, str) or not _DATE.fullmatch(value):
@@ -100,7 +106,7 @@ def validate(data: dict | None, topics: tuple[str, ...] = (), received: date | N
         "category": data["category"],
         "priority": priority if isinstance(priority, int) and 1 <= priority <= 5 else 3,
         "one_line_summary": str(data.get("one_line_summary") or "").strip(),
-        "action_items": [str(a) for a in data.get("action_items") or [] if a],
+        "action_items": _strings(data.get("action_items")),
         "deadline": _date(deadline, received),  # a real calendar date: "2026-02-30" would crash every date lookup later
         # Only topics from your list survive, spelled as you wrote them.
         "tags": list(dict.fromkeys(names[t.lower()] for t in tags if isinstance(t, str) and t.lower() in names)),
