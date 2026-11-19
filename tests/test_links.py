@@ -28,6 +28,18 @@ def test_to_html_and_plain():
     assert plain("• Pay [1][2] now [3]\nok") == "• Pay now\nok"
 
 
+def test_section_headings_are_bold_and_still_split_on():
+    from mailbrief.notify.telegram import messages, visible
+
+    out = to_html("📬 3 new emails — FYI 3\n\nTOP PRIORITIES TODAY\n• Pay the fee [1]\n\nDEADLINES & MEETINGS\n• Quiz on Friday", {1: "id-one"})
+    assert "<b>TOP PRIORITIES TODAY</b>" in out and "<b>DEADLINES &amp; MEETINGS</b>" in out
+    assert "<b>•" not in out and "<b>📬" not in out  # only headings
+    long = to_html("\n\n".join(f"SECTION {chr(65 + n)}\n" + "\n".join(f"• line {i}" for i in range(250)) for n in range(4)), {})
+    parts = messages(long, html_mode=True)
+    assert len(parts) >= 4 and all(visible(p).startswith("SECTION") for p in parts)  # splitting still finds them
+    assert all(p.count("<b>") == p.count("</b>") for p in parts)
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

@@ -33,7 +33,15 @@ def to_html(text: str, refs: dict) -> str:
     for m in REFS.finditer(text):
         out += [html.escape(text[last:m.start()], quote=False), links(m)]
         last = m.end()
-    return "".join(out + [html.escape(text[last:], quote=False)])
+    return _bold_headings("".join(out + [html.escape(text[last:], quote=False)]))
+
+
+def _bold_headings(html_text: str) -> str:
+    """Section headings (TOP PRIORITIES TODAY, FYI, …) in bold: on a phone, plain capitals blur into the bullets.
+    Judged on the visible text, the same way telegram.messages() finds the headings it splits at."""
+    from mailbrief.notify.telegram import is_heading, visible
+
+    return "\n".join(f"<b>{line}</b>" if is_heading(visible(line)) else line for line in html_text.split("\n"))
 
 
 def plain(text: str) -> str:
