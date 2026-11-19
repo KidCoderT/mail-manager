@@ -277,7 +277,8 @@ class Bot:
     def _events(self, chat_id: str, rest: str) -> None:
         from mailbrief import archive, events, rules
 
-        days = int(rest) if rest.isdigit() and 1 <= int(rest) <= 365 else events.DEFAULT_DAYS
+        # isascii: "²" and "٣" pass isdigit() but int() refuses them
+        days = int(rest) if rest.isascii() and rest.isdigit() and 1 <= int(rest) <= 365 else events.DEFAULT_DAYS
         try:
             your_rules = rules.load()
         except rules.RulesError:

@@ -111,6 +111,10 @@ def test_commands_and_errors():
             os.environ["SESSION_ENCRYPTION_KEY"] = key
     assert "SESSION_ENCRYPTION_KEY" in api.sent()[-1]["text"]
 
+    api.updates = [msg(41, 111, "/events ²")]  # a digit to isdigit(), not to int()
+    b.poll_once()
+    assert api.sent()[-1]["text"].startswith("No events in the next")
+
     synced = []
     b.run_sync = lambda: synced.append(1) or 0
     api.updates = [msg(5, 111, "/sync")]
