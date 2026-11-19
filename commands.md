@@ -1077,11 +1077,13 @@ Runs inside `mailbrief serve` (or alone with `mailbrief bot`, for testing). It l
 | `/sync` | Check for new mail now: a normal run with `--send`, so the digest arrives as usual. With nothing new it replies `✅ No new mail since the last check.` |
 | `/digest` | Send the latest saved digest again (with links), then the events calendar |
 | `/events [days]` | The upcoming-events calendar (default 14 days) |
-| `/labels` | Your label rules (as `mailbrief rules list`) |
-| `/label add course CS2040S [p2] [boost]` | Add a course rule |
-| `/label add sender a@b.c "Prof X" [direct] [boost] [p1]` | Add a sender rule (`direct`: only mail where you're the only To recipient) |
-| `/label add topic Networking "career fairs, meetups" [p2]` | Add an AI topic |
-| `/label remove course\|sender\|topic KEY` | Remove a rule (old emails keep its label) |
+| `/rules` | Your label rules (as `mailbrief rules list`) |
+| `/rule add course CS2040S [p2] [boost]` | Add a course rule |
+| `/rule add sender a@b.c "Prof X" [direct] [boost] [p1]` | Add a sender rule (`direct`: only mail where you're the only To recipient) |
+| `/rule add topic Networking "career fairs, meetups" [p2]` | Add an AI topic |
+| `/rule remove course\|sender\|topic KEY` | Remove a rule (old emails keep its label) |
+
+`/rules` and `/rule` match the CLI's `mailbrief rules`. The older names `/labels` and `/label` still work. (`mailbrief labels` is a different thing: the `MB:` categories in Outlook.)
 | `/profile text` | Set your profile |
 | `/login` | Sign in to Outlook again from your phone: a one-time link to a sign-in page (section 2, `login --remote`) |
 

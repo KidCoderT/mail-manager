@@ -948,13 +948,13 @@ def rules_command(args, out=None) -> int:
             },
         }[kind]
         if kind == "senders" and not args.label:
-            say('A sender needs a label name, e.g. /label add sender tan@example.edu "Prof Tan"' if chat
+            say('A sender needs a label name, e.g. /rule add sender tan@example.edu "Prof Tan"' if chat
                 else 'A sender needs --label, e.g. --label "Prof Tan".')
             return 2
         if kind == "topics" and not args.description:
             say(
                 'A topic needs a description, e.g. '
-                + ("/label" if chat else "rules")
+                + ("/rule" if chat else "rules")
                 + ' add topic Networking "career fairs, meetups, hackathons".'
             )
             return 2
@@ -976,7 +976,7 @@ def rules_command(args, out=None) -> int:
         new, gone = rules.remove(current, kind, args.key)
         if gone is None:
             say(
-                f"No {args.kind} {args.key!r} in your rules (see {'/labels' if chat else '`mailbrief rules list`'})."
+                f"No {args.kind} {args.key!r} in your rules (see {'/rules' if chat else '`mailbrief rules list`'})."
             )
             return 1
         label = rules.label_name(kind, gone)

@@ -277,7 +277,7 @@ Canvas       CS1101S: Mission 7 released      [MB: FYI] [MB: P3] [MB: CS1101S]
 **Where the rules live:** `data/rules.json`, on your PC (git-ignored, because it's personal). All of these edit the same file:
 - by hand, in an editor (a typo never breaks the digest: that run warns and skips Outlook labelling);
 - `mailbrief rules list | add | remove | profile` in the terminal;
-- `/label …` commands in your Telegram chat (below; M7 ✅).
+- `/rule …` commands in your Telegram chat (below; M7 ✅).
 
 **Four kinds of rule:**
 
@@ -304,11 +304,11 @@ Canvas       CS1101S: Mission 7 released      [MB: FYI] [MB: P3] [MB: CS1101S]
 
 **From Telegram (M7 ✅):**
 ```
-/labels                                              list your rules
-/label add course CS2040S
-/label add sender tan@nus.edu.sg "Prof Tan" direct
-/label add topic Networking "career fairs, meetups, hackathons, tech talks"
-/label remove course MA1521                          (semester's over)
+/rules                                               list your rules
+/rule add course CS2040S
+/rule add sender tan@nus.edu.sg "Prof Tan" direct
+/rule add topic Networking "career fairs, meetups, hackathons, tech talks"
+/rule remove course MA1521                          (semester's over)
 /profile Year 2 CS student looking for internships and hackathons
 ```
 Each change is echoed back ("✅ Added course CS2040S. 14 saved emails match; they'll be labelled on the next run.").
@@ -385,7 +385,7 @@ MailBrief:  • You may bring "ONE A4 double-sided cheat sheet, handwritten or p
 **Conversation:**
 - **Follow-ups work.** The last few turns are remembered per chat, so "and the final?" works. They're kept **in memory only**, never written to disk. `/new` starts fresh.
 - **Fresh mail:** answers come from the archive, which is as current as the last run. `/sync` starts a run now (the digest arrives as usual). `/digest` resends the latest digest, `/events` the calendar.
-- **Labels from the chat:** `/labels`, `/label add …`, `/label remove …` and `/profile …` edit `rules.json`, exactly like `mailbrief rules` (§3.8).
+- **Labels from the chat:** `/rules`, `/rule add …`, `/rule remove …` and `/profile …` edit `rules.json`, exactly like `mailbrief rules` (§3.8).
 - **In a terminal:** `mailbrief chat` works the same way without Telegram. `mailbrief bot` runs only the listener, for testing.
 
 **Where it runs:** inside `mailbrief serve`. A listener thread long-polls Telegram (`getUpdates`), so there's no webhook and no open port, and it works behind home Wi-Fi. It acts only on your allowlisted chat (§3.6). Logs record counts and timings only, never questions or answers.

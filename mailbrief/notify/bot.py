@@ -26,14 +26,14 @@ Each answer cites its emails: tap ↗ or a source to open it in Outlook.
 /sync: check for new mail now (sends the digest)
 /digest: send the latest digest again
 /events [days]: upcoming events (default 14 days)
-/labels: your label rules
-/label add course CS2040S | sender a@b.c "Prof X" [direct] [boost] [p2] | topic Name "description" [p2]
-/label remove course|sender|topic KEY
+/rules: your own label rules
+/rule add course CS2040S | sender a@b.c "Prof X" [direct] [boost] [p2] | topic Name "description" [p2]
+/rule remove course|sender|topic KEY
 /profile your profile text
 /login: sign in to Outlook again (when I say the login expired)"""
 COMMANDS = [("new", "start a fresh conversation"), ("sync", "check for new mail now"),
             ("digest", "send the latest digest again"), ("events", "upcoming events"),
-            ("labels", "your label rules"), ("login", "sign in to Outlook again"), ("help", "what I can do")]
+            ("rules", "your own label rules"), ("login", "sign in to Outlook again"), ("help", "what I can do")]
 
 
 def enabled() -> bool:
@@ -200,9 +200,11 @@ class Bot:
             self._digest(chat_id)
         elif name == "/events":
             self._events(chat_id, rest)
-        elif name == "/labels":
+        # "rules" as in `mailbrief rules`; /labels and /label are the older names and still work. (`mailbrief
+        # labels` is something else: the MB: categories in Outlook.)
+        elif name in ("/rules", "/labels"):
             self.say(chat_id, rules_reply(Namespace(action="list")))
-        elif name == "/label":
+        elif name in ("/rule", "/label"):
             self.say(chat_id, label_command(rest))
         elif name == "/profile":
             self.say(chat_id, rules_reply(Namespace(action="profile", text=rest)) if rest else
@@ -416,10 +418,10 @@ def rules_reply(args: Namespace) -> str:
 
 
 def label_command(rest: str) -> str:
-    """/label add course CS2040S [p2] [boost] | add sender a@b.c "Prof X" [direct] [boost] [p1]
+    """/rule add course CS2040S [p2] [boost] | add sender a@b.c "Prof X" [direct] [boost] [p1]
     | add topic Name "description" [p2] | remove course|sender|topic KEY"""
-    usage = ('Usage: /label add course CS2040S | /label add sender a@b.c "Prof X" direct | '
-             '/label add topic Networking "career fairs, meetups" p2 | /label remove course MA1521')
+    usage = ('Usage: /rule add course CS2040S | /rule add sender a@b.c "Prof X" direct | '
+             '/rule add topic Networking "career fairs, meetups" p2 | /rule remove course MA1521')
     try:
         words = shlex.split(rest)
     except ValueError:

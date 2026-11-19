@@ -116,6 +116,11 @@ def test_commands_and_errors():
             os.environ["SESSION_ENCRYPTION_KEY"] = key
     assert "SESSION_ENCRYPTION_KEY" in api.sent()[-1]["text"]
 
+    api.updates = [msg(43, 111, "/rule add course zz1000"), msg(44, 111, "/rules"), msg(45, 111, "/labels")]
+    b.poll_once()
+    new, old = api.sent()[-2]["text"], api.sent()[-1]["text"]
+    assert "MB: ZZ1000" in new and new == old  # /rules is the name; /labels still works
+
     api.updates = [msg(41, 111, "/events ²")]  # a digit to isdigit(), not to int()
     b.poll_once()
     assert api.sent()[-1]["text"].startswith("No events in the next")
@@ -143,9 +148,9 @@ def test_commands_and_errors():
 
 
 def test_chat_replies_never_tell_you_to_type_cli_flags():
-    assert "/label add sender" in label_command("add sender a@example.com") and "--label" not in label_command("add sender a@example.com")
-    assert "/label add topic" in label_command("add topic Networking")
-    assert "/labels" in label_command("remove course NOPE101") and "mailbrief rules list" not in label_command("remove course NOPE101")
+    assert "/rule add sender" in label_command("add sender a@example.com") and "--label" not in label_command("add sender a@example.com")
+    assert "/rule add topic" in label_command("add topic Networking")
+    assert "/rules" in label_command("remove course NOPE101") and "mailbrief rules list" not in label_command("remove course NOPE101")
     added = label_command("add course zz9999")
     assert "/sync" in added and "labels apply" not in added
     assert "on the machine MailBrief runs on" in label_command("remove course zz9999")  # a PC-only step says so

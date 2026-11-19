@@ -1380,7 +1380,7 @@ loop: getUpdates(timeout 20 s, offset) → for each update:
 - **The allowlist** is the destinations file, written only by the local CLI. A stranger who finds the bot gets no reply, so they can't even tell it's alive.
 - **Threads, not processes:** runs stay child processes (as before). The listener only reads the archive and index, which are written atomically, so it always sees a whole old or new copy. Fetching a file takes the **run lock** without waiting: if a run holds it, the reply is "tap again in a minute". Outlook is never opened twice at once.
 - **Buttons** carry a short random token (`callback_data` is limited to 64 bytes). It maps, in memory, to the email and attachment, so buttons expire when `serve` restarts.
-- **`/sync`** starts a normal `new` run as a child process (`service._run_child`), the same as a scheduled one, so the digest arrives as usual. `/label …` and `/profile …` call the same `rules_command` as the terminal, so the checks and messages are identical.
+- **`/sync`** starts a normal `new` run as a child process (`service._run_child`), the same as a scheduled one, so the digest arrives as usual. `/rule …` and `/profile …` call the same `rules_command` as the terminal, so the checks and messages are identical.
 - **Never dies:** each update is handled inside a try. A 409 ("another getUpdates is running", e.g. `add-destination`) waits 30 s, and network errors wait 10 s.
 - **Logs are counts only:** "answered in 14s (4 sources)", "ignored 2 message(s)", never questions or answers.
 - **`/login`** runs `remote_login.run` in its own thread (section 7.24) and sends you the link. A second `/login` while one is open just says so.
