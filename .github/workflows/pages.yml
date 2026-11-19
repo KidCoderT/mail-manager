@@ -1,4 +1,4 @@
-# Publishes the website/ folder to GitHub Pages.
+# Verifies and publishes webpage-redesign/ to GitHub Pages.
 # One-time setup: repo Settings → Pages → Build and deployment → Source: "GitHub Actions".
 name: Website
 
@@ -25,6 +25,10 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - run: uv run playwright install --with-deps chromium --no-shell
+      - run: uv run python scripts/check_website.py
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

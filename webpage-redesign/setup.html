@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Set up MailBrief: from clone to your first digest</title>
+<meta name="description" content="Linear setup for MailBrief: requirements, install, .env and AI models, Telegram bot, Outlook sign-in, destination, first digest, then optional backfill, search index, serve, autostart and Docker.">
+<link rel="icon" href="assets/favicon.svg">
+<link rel="stylesheet" href="style.css">
+<script src="site.js"></script>
+</head>
+<body class="setup">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="window">
+<header class="titlebar">
+  <a class="brand" href="index.html"><span>mailbrief</span></a>
+  <nav class="tabs" aria-label="Main">
+    <a href="index.html">home</a>
+    <a href="setup.html" aria-current="page">setup</a>
+    <a href="docs.html">docs</a>
+    <a class="tab-ext" href="https://github.com/KidCoderT/mail-manager" rel="noopener noreferrer">github ↗</a>
+  </nav>
+  <label class="theme-picker">
+    <span class="visually-hidden">Theme</span>
+    <select id="theme-select" name="theme">
+      <option value="dark" selected>dark</option>
+      <option value="light">light</option>
+      <option value="system">system</option>
+    </select>
+  </label>
+</header>
+<main id="main" class="docs-layout setup">
+  <aside class="docs-nav" aria-label="Steps">
+    <nav aria-label="Steps">
+      <p class="docs-nav-group">Steps</p>
+      <ul>
+        <li><a href="#requirements">01 Check the requirements</a></li>
+        <li><a href="#install">02 Clone and install</a></li>
+        <li><a href="#env">03 Create .env and an encryption key</a></li>
+        <li><a href="#ai">04 Point it at your AI endpoint</a></li>
+        <li><a href="#telegram">05 Create your Telegram bot</a></li>
+        <li><a href="#login">06 Sign in to Outlook once</a></li>
+        <li><a href="#destination">07 Register your chat as the destination</a></li>
+        <li><a href="#first-digest">08 Get your first digest</a></li>
+        <li><a href="#backfill">09 Archive your history and enable chat search</a></li>
+        <li><a href="#schedule">10 Run it every morning</a></li>
+      </ul>
+      <p class="docs-nav-group">Then</p>
+      <ul>
+        <li><a href="#next">What next</a></li>
+        <li><a href="docs.html">Every command</a></li>
+      </ul>
+    </nav>
+  </aside>
+  <article class="docs-content">
+  <header class="page-intro">
+    <p class="eyebrow">less SETUP.md</p>
+    <h1>From clone to your first digest</h1>
+    <p>Follow the steps in order. Steps 1 to 8 give you a working morning digest in Telegram. Step 9 onwards is optional: history, chat search, and running on a schedule.</p>
+    <p>Every <code>uv run …</code> line below works the same in bash (Linux, macOS, Git Bash) and Windows PowerShell. Where the shells differ, both versions are shown.</p>
+  </header>
+
+  <div class="callout">
+    <p><strong>Before you start.</strong> MailBrief is a personal project for one person and their own mailbox. It uses Outlook on the web's internal interface, not a public API, so it can break or be blocked. Automated access may be against your organisation's IT policy: check first. Email text is sent to the AI endpoint you choose, and digests and chat answers go to Telegram.</p>
+  </div>
+
+  <ol class="steps">
+    <li id="requirements">
+      <h2>Check the requirements</h2>
+      <ul>
+        <li>A <strong>Microsoft 365 work or school account</strong> that you read in Outlook on the web (<code>outlook.office.com</code>). Personal Outlook.com accounts are not supported.</li>
+        <li>An <strong>OpenAI-compatible AI endpoint</strong> serving a chat model, a model that accepts images, and an embedding model. Use one your organisation runs, or a local server such as Ollama. There is no default endpoint.</li>
+        <li>A <strong>Telegram</strong> account. You create your own bot in step 4.</li>
+        <li><strong>Python 3.11</strong>, <a href="https://docs.astral.sh/uv/">uv</a> and git, on Windows, Linux or macOS. For an always-on server, Docker.</li>
+      </ul>
+      <p>To look around first, the offline tour needs no account and no key: run <code>uv sync</code>, then <code>uv run python demo/run.py</code>. It uses 15 invented emails in a temporary archive.</p>
+    </li>
+
+    <li id="install">
+      <h2>Clone and install</h2>
+<pre data-copy><code>git clone https://github.com/KidCoderT/mail-manager.git
+cd mail-manager
+uv sync
+uv run playwright install chromium --no-shell</code></pre>
+      <p><code>uv sync</code> installs the pinned dependencies into <code>.venv/</code>. The second command downloads the Chromium build Playwright drives (about 200 MB). Run it again after upgrading the <code>playwright</code> package.</p>
+    </li>
+
+    <li id="env">
+      <h2>Create <code>.env</code> and an encryption key</h2>
+      <p>Copy the example file:</p>
+      <div class="shell-pair">
+        <p class="shell-label">bash</p>
+<pre data-copy><code>cp .env.example .env</code></pre>
+        <p class="shell-label">PowerShell</p>
+<pre data-copy><code>Copy-Item .env.example .env</code></pre>
+      </div>
+      <p>Generate a key. This line is the same in both shells:</p>
+<pre data-copy><code>uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"</code></pre>
+      <p>Paste the output after <code>SESSION_ENCRYPTION_KEY=</code> in <code>.env</code>.</p>
+      <div class="callout">
+        <p><strong>Keep this key safe.</strong> It decrypts your saved Outlook session and your email archive. If you lose it, both are unreadable: you sign in again and the archive is gone.</p>
+      </div>
+    </li>
+
+    <li id="ai">
+      <h2>Point it at your AI endpoint</h2>
+      <p>Set these in <code>.env</code>. Use the model names exactly as your endpoint lists them. The defaults shown are the ones this project was tested with.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Variable</th><th scope="col">What it is</th><th scope="col">Example / default</th></tr></thead>
+          <tbody>
+            <tr><td><code>AI_BASE_URL</code></td><td>The OpenAI-compatible endpoint. Required: your email text is sent here.</td><td><code>http://localhost:11434/v1</code></td></tr>
+            <tr><td><code>AI_API_KEY</code></td><td>The endpoint's key. Leave it empty for a local server with no authentication.</td><td>(empty)</td></tr>
+            <tr><td><code>AI_CLASSIFIER_MODEL</code></td><td>Classifies text-only emails</td><td><code>qwen3.6:35b</code></td></tr>
+            <tr><td><code>AI_VISION_MODEL</code></td><td>Classifies emails with images (must accept images)</td><td><code>qwen3.6:35b</code></td></tr>
+            <tr><td><code>AI_DIGEST_MODEL</code></td><td>Writes the digest</td><td><code>qwen3.8:27b</code></td></tr>
+            <tr><td><code>AI_ANSWER_MODEL</code></td><td>Writes chat answers</td><td><code>qwen3.8:27b</code></td></tr>
+            <tr><td><code>AI_EMBED_MODEL</code></td><td>Embeddings for the chat search index</td><td><code>bge-m3</code></td></tr>
+            <tr><td><code>AI_CHAT_TEMPLATE_KWARGS</code></td><td><code>on</code> only for Qwen/Ollama servers that accept <code>enable_thinking</code>. Keep <code>off</code> for strict OpenAI-compatible servers.</td><td><code>off</code></td></tr>
+            <tr><td><code>AI_FALLBACK_MODEL</code></td><td>Used when another model doesn't answer in time. Empty means never switch.</td><td><code>AI_CLASSIFIER_MODEL</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Also set <code>DEFAULT_TIMEZONE</code> to your IANA timezone, for example <code>Europe/London</code> (default <code>Asia/Singapore</code>). <code>AI_API_KEY</code> and <code>TELEGRAM_BOT_TOKEN</code> may live in <code>.env</code> or in user environment variables. Every other setting is listed in <a href="docs.html#configuration">the configuration reference</a>.</p>
+    </li>
+
+    <li id="telegram">
+      <h2>Create your Telegram bot</h2>
+      <ol>
+        <li>In Telegram, open <strong>@BotFather</strong> and send <code>/newbot</code>. Follow the prompts.</li>
+        <li>Copy the token it gives you into <code>.env</code> as <code>TELEGRAM_BOT_TOKEN=…</code>.</li>
+        <li>In BotFather, send <code>/setjoingroups</code>, pick your bot, choose <strong>Disable</strong>. Nobody can then add your bot to their groups.</li>
+      </ol>
+    </li>
+
+    <li id="login">
+      <h2>Sign in to Outlook once</h2>
+<pre data-copy><code>uv run mailbrief login</code></pre>
+      <p>A browser window opens on Outlook. Sign in as usual (password, MFA) and tick <strong>Stay signed in</strong>. When your inbox is visible, press <kbd>Enter</kbd> in the terminal. The session is saved, encrypted, to <code>data/session.enc</code>. No email is read during login.</p>
+      <p>Sign in on the same machine that will run the daily job. On a server with no screen, use <code>mailbrief login --remote</code> instead (see <a href="docs.html#cmd-login">login</a>).</p>
+    </li>
+
+    <li id="destination">
+      <h2>Register your chat as the destination</h2>
+      <p>First send your bot any message in Telegram, so it can find your chat. Then:</p>
+<pre data-copy><code>uv run mailbrief add-destination telegram</code></pre>
+      <p>Pick your chat by number. It is saved to <code>data/destinations.json</code> and a test message arrives. Only chats added this way get digests or chat answers. If you already know your chat ID, <code>--chat-id 123456789</code> skips the lookup (no test message).</p>
+    </li>
+
+    <li id="first-digest">
+      <h2>Get your first digest</h2>
+<pre data-copy><code>uv run mailbrief run --send --commit</code></pre>
+      <p>This reads mail from the last 24 hours, classifies it, saves it to the encrypted archive, puts <code>MB:</code> categories on those emails in Outlook, and sends the digest to Telegram. <code>--commit</code> marks them as processed, so tomorrow's run starts from here.</p>
+      <p>Want a dry look first? <code>uv run mailbrief run</code> prints the digest without sending it or marking anything processed. It still saves to the archive and labels the emails in Outlook. To turn labelling off, set <code>OUTLOOK_LABELS=off</code>.</p>
+      <div class="callout">
+        <p><strong>What MailBrief changes in Outlook:</strong> only its own <code>MB:</code> categories. It never deletes, moves, sends, replies to, or marks anything as read. A code-level check refuses every other kind of write.</p>
+      </div>
+    </li>
+
+    <li id="backfill">
+      <h2>Optional: archive your history and enable chat search</h2>
+      <p>Do this <strong>after</strong> the first digest:</p>
+<pre data-copy><code>uv run mailbrief run --backfill
+uv run mailbrief index rebuild
+uv run mailbrief chat "any deadlines this week?"</code></pre>
+      <p><code>--backfill</code> saves your whole inbox to the archive and moves the cursor to the newest email. Run it first and nothing is left "new", so your first <code>run --send --commit</code> would only say <code>No new emails, so no digest.</code> It is resumable: <kbd>Ctrl</kbd>+<kbd>C</kbd> keeps what's done, and running it again continues.</p>
+      <p><code>index rebuild</code> embeds the archive for chat search (it sends email text to your <code>AI_EMBED_MODEL</code>). After that, every run keeps the index current by itself.</p>
+    </li>
+
+    <li id="schedule">
+      <h2>Optional: run it every morning</h2>
+      <p><code>serve</code> runs forever, fires a run at each <code>RUN_AT</code> time (default <code>daily 07:30</code>) and answers your Telegram chat.</p>
+<pre data-copy><code>uv run mailbrief serve</code></pre>
+      <p>Try a different schedule without editing <code>.env</code>:</p>
+<pre data-copy><code>uv run mailbrief serve --at "daily 07:30; sun 20:00 this-week"</code></pre>
+      <p>Stop it with <kbd>Ctrl</kbd>+<kbd>C</kbd>, or <code>uv run mailbrief stop</code> from another terminal. A run in progress finishes first. The schedule format is in <a href="docs.html#run-at">RUN_AT</a>.</p>
+
+      <h3 id="autostart">Windows: start hidden at logon</h3>
+<pre data-copy><code>uv run mailbrief autostart on
+schtasks /Run /TN MailBrief
+uv run mailbrief status</code></pre>
+      <p>The first line creates a Task Scheduler task named MailBrief, the second starts it now without logging out, the third checks it. <code>uv run mailbrief autostart off</code> removes the task. No admin rights needed. On Linux and macOS use Docker or your own service manager.</p>
+
+      <h3 id="logs">Watch the log</h3>
+      <p>There is one file per month in <code>data/logs/</code>. Replace the month in the file name with the current one.</p>
+      <div class="shell-pair">
+        <p class="shell-label">bash</p>
+<pre data-copy><code>tail -f data/logs/2026-11.log</code></pre>
+        <p class="shell-label">PowerShell</p>
+<pre data-copy><code>Get-Content data\logs\2026-11.log -Wait -Tail 30</code></pre>
+      </div>
+
+      <h3 id="docker">A server with Docker</h3>
+      <p>Put the same <code>.env</code> on the server (add <code>AI_API_KEY</code> there if it is a Windows variable on your PC). Copy <code>data/session.enc</code> and <code>data/destinations.json</code> into <code>./data/</code>; this needs the same <code>SESSION_ENCRYPTION_KEY</code>.</p>
+<pre data-copy><code>git clone https://github.com/KidCoderT/mail-manager.git
+cd mail-manager
+docker compose up -d --build
+docker compose logs -f
+docker compose exec mailbrief mailbrief status</code></pre>
+      <p>Stop it properly with <code>docker compose down</code>. Update with <code>git pull</code>, then <code>docker compose up -d --build</code>. With no screen on the server, sign in by sending <code>/login</code> to your bot. Railway and Render are covered in <a href="docs.html#hosting">Hosting</a>; read the privacy note there first.</p>
+    </li>
+  </ol>
+
+  <section class="doc-section" id="next">
+    <h2>Next</h2>
+    <ul>
+      <li>In Telegram, ask a question in plain words, or send <code>/help</code>. All bot commands: <a href="docs.html#telegram">Telegram commands</a>.</li>
+      <li>Add your own labels for courses, senders and topics: <a href="docs.html#cmd-rules">rules</a>.</li>
+      <li>Session expired? <code>run</code> exits with code 2. Run <code>uv run mailbrief login</code>, or send <code>/login</code>.</li>
+      <li>Every command and flag: <a href="docs.html">Docs</a>, or the full prose in <a href="https://github.com/KidCoderT/mail-manager/blob/main/commands.md">commands.md</a>.</li>
+    </ul>
+  </section>
+  </article>
+</main>
+
+<form class="cmdline needs-js" id="terminal-form" autocomplete="off">
+  <label class="prompt" for="terminal-input"><span aria-hidden="true">❯</span><span class="visually-hidden">Command</span></label>
+  <div class="cmd-field">
+    <span class="ghost" aria-hidden="true"></span>
+    <input id="terminal-input" name="command" type="text" maxlength="120" placeholder="man login, docs, or home" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
+  </div>
+  <button type="submit">run <kbd>⏎</kbd></button>
+</form>
+
+<footer class="statusbar">
+  <p>MailBrief. MIT licensed. Not affiliated with Microsoft or Telegram.</p>
+  <nav aria-label="Footer">
+    <a href="index.html">home</a>
+    <a href="setup.html">setup</a>
+    <a href="docs.html">docs</a>
+    <a href="https://github.com/KidCoderT/mail-manager" rel="noopener noreferrer">github</a>
+    <a href="https://github.com/KidCoderT/mail-manager/blob/main/commands.md" rel="noopener noreferrer">commands.md</a>
+    <a href="https://github.com/KidCoderT/mail-manager/blob/main/SECURITY.md" rel="noopener noreferrer">security</a>
+    <a href="https://github.com/KidCoderT/mail-manager/blob/main/LICENSE" rel="noopener noreferrer">license</a>
+  </nav>
+</footer>
+</div>
+</body>
+</html>

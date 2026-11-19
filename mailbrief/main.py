@@ -1244,14 +1244,8 @@ def _described(add_parser, prefix: str, name: str, **kw):
     return add_parser(name, **kw)
 
 
-def _main() -> None:
-    load_dotenv()
-    # Emoji subjects and progress marks (✓) crash Windows' cp1252 encoding when output is piped.
-    for stream in (sys.stdout, sys.stderr):
-        if stream:  # None under pythonw (autostart runs `serve` without a window)
-            reconfigure = getattr(stream, "reconfigure", None)
-            if reconfigure:
-                reconfigure(encoding="utf-8", errors="replace")
+def build_parser() -> argparse.ArgumentParser:
+    """The CLI parser, without reading .env, touching streams, or running a command."""
     from importlib.metadata import PackageNotFoundError, version
 
     try:
@@ -1503,6 +1497,18 @@ def _main() -> None:
         "autostart", help="Windows: start `serve` hidden at logon (Task Scheduler)"
     )
     auto_p.add_argument("state", choices=["on", "off"], help="on: create the Task Scheduler task; off: remove it")
+    return parser
+
+
+def _main() -> None:
+    load_dotenv()
+    # Emoji subjects and progress marks (✓) crash Windows' cp1252 encoding when output is piped.
+    for stream in (sys.stdout, sys.stderr):
+        if stream:  # None under pythonw (autostart runs `serve` without a window)
+            reconfigure = getattr(stream, "reconfigure", None)
+            if reconfigure:
+                reconfigure(encoding="utf-8", errors="replace")
+    parser = build_parser()
     args = parser.parse_args()
 
     if args.command == "login":

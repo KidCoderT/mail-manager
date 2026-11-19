@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>MailBrief docs: every command, flag and setting</title>
+<meta name="description" content="Reference for MailBrief: every CLI command, subcommand and flag, the Telegram bot commands, configuration variables, the RUN_AT schedule, files, exit codes, hosting, recipes, privacy and limits.">
+<link rel="icon" href="assets/favicon.svg">
+<link rel="stylesheet" href="style.css">
+<script src="site.js"></script>
+</head>
+<body class="docs">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="window">
+<header class="titlebar">
+  <a class="brand" href="index.html"><span>mailbrief</span></a>
+  <nav class="tabs" aria-label="Main">
+    <a href="index.html">home</a>
+    <a href="setup.html">setup</a>
+    <a href="docs.html" aria-current="page">docs</a>
+    <a class="tab-ext" href="https://github.com/KidCoderT/mail-manager" rel="noopener noreferrer">github ↗</a>
+  </nav>
+  <label class="theme-picker">
+    <span class="visually-hidden">Theme</span>
+    <select id="theme-select" name="theme">
+      <option value="dark" selected>dark</option>
+      <option value="light">light</option>
+      <option value="system">system</option>
+    </select>
+  </label>
+</header>
+<main id="main" class="docs-layout">
+  <aside class="docs-nav" aria-label="Documentation">
+    <div class="docs-search">
+    <label for="docs-search">Filter the docs</label>
+    <input id="docs-search" type="search" placeholder="e.g. backfill, --days, /login" autocomplete="off">
+    </div>
+    <nav aria-label="Sections">
+      <p class="docs-nav-group">Start</p>
+      <ul>
+        <li><a href="#overview" data-search="overview uv run safety what it changes">Overview</a></li>
+        <li><a href="#cmd-global" data-search="--help --version global">Global options</a></li>
+      </ul>
+      <p class="docs-nav-group">Commands</p>
+      <ul>
+        <li><a href="#cmd-login" data-search="login --remote sign in session cloudflared">login</a></li>
+        <li><a href="#cmd-run" data-search="run --all --backfill --digest --as-of --json --send --commit --plain --quiet">run</a></li>
+        <li><a href="#cmd-emails" data-search="emails --period --day --search --show --thread --digest --export --send archive">emails</a></li>
+        <li><a href="#cmd-events" data-search="events --days --past --send calendar">events</a></li>
+        <li><a href="#cmd-labels" data-search="labels outlook categories MB:">labels</a>
+          <ul>
+            <li><a href="#cmd-labels-status" data-search="labels status">labels status</a></li>
+            <li><a href="#cmd-labels-apply" data-search="labels apply --period --days --limit --dry-run">labels apply</a></li>
+            <li><a href="#cmd-labels-clear" data-search="labels clear --all --colours --label --everywhere --yes --dry-run">labels clear</a></li>
+            <li><a href="#cmd-labels-retag" data-search="labels retag --period --days --limit --yes --dry-run ai">labels retag</a></li>
+          </ul>
+        </li>
+        <li><a href="#cmd-rules" data-search="rules your own labels course sender topic profile">rules</a>
+          <ul>
+            <li><a href="#cmd-rules-list" data-search="rules list">rules list</a></li>
+            <li><a href="#cmd-rules-add" data-search="rules add --label --direct --priority --boost">rules add</a></li>
+            <li><a href="#cmd-rules-remove" data-search="rules remove">rules remove</a></li>
+            <li><a href="#cmd-rules-profile" data-search="rules profile">rules profile</a></li>
+          </ul>
+        </li>
+        <li><a href="#cmd-add-destination" data-search="add-destination telegram --chat-id">add-destination</a></li>
+        <li><a href="#cmd-index" data-search="index status update rebuild embeddings">index</a></li>
+        <li><a href="#cmd-chat" data-search="chat question ask">chat</a></li>
+        <li><a href="#cmd-bot" data-search="bot telegram listener">bot</a></li>
+        <li><a href="#cmd-serve" data-search="serve --at schedule">serve</a></li>
+        <li><a href="#cmd-stop" data-search="stop">stop</a></li>
+        <li><a href="#cmd-status" data-search="status service">status</a></li>
+        <li><a href="#cmd-autostart" data-search="autostart on off windows task scheduler">autostart</a></li>
+      </ul>
+      <p class="docs-nav-group">Reference</p>
+      <ul>
+        <li><a href="#telegram" data-search="telegram /start /help /new /sync /login /digest /events /rules /labels /rule /label /profile">Telegram commands</a></li>
+        <li><a href="#configuration" data-search="env configuration variables .env">Configuration</a></li>
+        <li><a href="#run-at" data-search="RUN_AT schedule grammar daily weekdays day-N">RUN_AT schedule</a></li>
+        <li><a href="#files" data-search="files data session.enc archive cursor">Files</a></li>
+        <li><a href="#exit-codes" data-search="exit codes">Exit codes</a></li>
+        <li><a href="#hosting" data-search="hosting docker railway render server">Hosting</a></li>
+        <li><a href="#recipes" data-search="recipes workflows">Recipes</a></li>
+        <li><a href="#privacy" data-search="privacy limits security">Privacy &amp; limits</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <article class="docs-content">
+    <header class="page-intro">
+      <p class="eyebrow">man mailbrief</p>
+      <h1>Command and configuration reference</h1>
+      <p>Every command, subcommand and flag, the Telegram commands, and every setting. The long-form explanation of each step lives in <a href="https://github.com/KidCoderT/mail-manager/blob/main/commands.md">commands.md</a>, which stays the canonical reference. New here? Start with <a href="setup.html">Setup</a>.</p>
+    </header>
+
+    <section class="doc-section" id="overview">
+      <h2>Overview</h2>
+      <noscript><p>JavaScript is off: all documentation and the homepage example remain available in the dark theme. Interactive filtering, theme selection and the playground require JavaScript.</p></noscript>
+      <p>Run every command from the project folder with <code>uv run</code>, which uses the project's own environment. No virtualenv activation is needed. In Docker the prefix is <code>docker compose exec mailbrief</code> instead, as in <code>docker compose exec mailbrief mailbrief status</code>.</p>
+      <p><code>mailbrief &lt;command&gt; --help</code> prints each command's options with examples.</p>
+      <div class="callout">
+        <p><strong>What MailBrief writes to Outlook.</strong> Only its own <code>MB:</code> categories (labels), when <code>run</code>, <code>labels apply</code>, <code>labels clear</code> or <code>labels retag</code> runs. Every request passes one check before it leaves your machine: reads are allowed, <code>UpdateItem</code> only when it changes nothing but Categories, and the category list may only gain or lose names starting with <code>MB: </code>. Moving, deleting, sending and marking read are refused before any network call.</p>
+      </div>
+      <p>Commands that never contact Outlook: <code>emails</code> (unless <code>--send</code>, which uses Telegram), <code>events</code>, <code>rules</code>, <code>index</code>, <code>chat</code>, <code>stop</code>, <code>status</code>, <code>autostart</code>. The Telegram chat fetches attachments from Outlook only when you tap a file button.</p>
+    </section>
+
+    <section class="doc-section" id="cmd-global">
+      <h2><code>mailbrief</code> global options</h2>
+<pre><code>mailbrief [--help] [--version] &lt;command&gt; …</code></pre>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Flag</th><th scope="col">Does</th></tr></thead>
+          <tbody>
+            <tr><td><code>--help</code>, <code>-h</code></td><td>Lists the commands and the first-time order. Works on every command and subcommand too.</td></tr>
+            <tr><td><code>--version</code></td><td>Prints <code>mailbrief &lt;version&gt;</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The help ends with the first-time order:</p>
+<pre><code>mailbrief login                        # sign in to Outlook once
+mailbrief add-destination telegram     # where the digest goes
+mailbrief run --send --commit          # your first digest
+mailbrief serve                        # then every morning by itself</code></pre>
+      <p>Commands: <a href="#cmd-login">login</a>, <a href="#cmd-run">run</a>, <a href="#cmd-emails">emails</a>, <a href="#cmd-add-destination">add-destination</a>, <a href="#cmd-labels">labels</a>, <a href="#cmd-rules">rules</a>, <a href="#cmd-index">index</a>, <a href="#cmd-chat">chat</a>, <a href="#cmd-bot">bot</a>, <a href="#cmd-events">events</a>, <a href="#cmd-serve">serve</a>, <a href="#cmd-stop">stop</a>, <a href="#cmd-status">status</a>, <a href="#cmd-autostart">autostart</a>.</p>
+    </section>
+
+    <section class="doc-section" id="cmd-login">
+      <h2><code>mailbrief login</code></h2>
+<pre><code>mailbrief login [--remote]</code></pre>
+      <p>Signs you in to Outlook once in a visible Chromium window. Sign in (MFA, tick <strong>Stay signed in</strong>), wait for your inbox, then press <kbd>Enter</kbd> in the terminal. Cookies, local storage and the browser's user agent are saved encrypted to <code>data/session.enc</code>. No email is read.</p>
+      <p>Run it again the first time, whenever <code>run</code> says the Outlook session expired, and after changing <code>SESSION_ENCRYPTION_KEY</code>. Sign in on the machine that runs the daily job; copied sessions often force a new sign-in.</p>
+      <h3 id="cmd-login-remote"><code>--remote</code>: sign in from any browser</h3>
+      <p>For servers with no screen; the same as <code>/login</code> in Telegram. A headless Chromium opens Microsoft's sign-in page in a fresh profile, a small web server starts on <code>$PORT</code> (default 8080), and a one-time link is printed: <code>https://&lt;your-app&gt;/login#&lt;token&gt;</code>. Open it, tap <strong>Start</strong>, and drive the live picture: tap to click, type in the box and press <strong>Send</strong>, use the <strong>Enter</strong>, <strong>Tab</strong> and <strong>⌫</strong> buttons. When the inbox appears, the session is saved and checked, and you get <strong>Logged in ✅</strong>.</p>
+      <ul>
+        <li>The token sits after <code>#</code>, so it never reaches a server log. Tapping Start spends it and gives your browser a private cookie; a forwarded link does nothing.</li>
+        <li>The page stays open for at most 10 minutes and closes as soon as you're signed in.</li>
+        <li><code>https://</code> only, except <code>http://localhost</code>, which listens on this machine only. On your PC, a blocked 8080 falls back to a free port; on a server, or with <code>PUBLIC_URL</code> set, it reports the blocked port instead.</li>
+        <li>Your inbox is never pictured, and screenshots and typing stay in memory.</li>
+        <li>It holds the run lock, so it and a run wait for each other.</li>
+        <li>The link's address is <code>PUBLIC_URL</code>, else <code>RENDER_EXTERNAL_URL</code>, else <code>https://$RAILWAY_PUBLIC_DOMAIN</code>, else <code>http://localhost:$PORT</code>.</li>
+        <li>From your phone while MailBrief runs on your PC: install cloudflared, set <code>LOGIN_TUNNEL=cloudflared</code>, restart <code>serve</code> and send <code>/login</code>. The link is a temporary trycloudflare.com address. Cloudflare sees the traffic, your password included.</li>
+      </ul>
+<pre data-copy><code>winget install --id Cloudflare.cloudflared</code></pre>
+      <div class="table-wrap">
+        <table>
+          <caption>Exit codes</caption>
+          <thead><tr><th scope="col">Code</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td>0</td><td>Signed in and saved</td></tr>
+            <tr><td>1</td><td><code>--remote</code>: timed out, or the saved sign-in didn't work</td></tr>
+            <tr><td>2</td><td><code>--remote</code>: <code>PUBLIC_URL</code> isn't <code>https://</code>, the port is in use or blocked, or cloudflared didn't start within 30 s</td></tr>
+            <tr><td>3</td><td>A run is using Outlook</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="doc-section" id="cmd-run">
+      <h2><code>mailbrief run</code></h2>
+<pre><code>mailbrief run [--all] [--backfill] [--digest SCOPE] [--as-of YYYY-MM-DD]
+              [--json] [--send] [--commit] [--plain] [--quiet]</code></pre>
+      <p>Opens Outlook headless and finds inbox emails since the last <em>committed</em> run (24 hours back when there is no cursor). It fetches full text and images, classifies each email with the AI using thread context, saves everything to the encrypted archive, puts <code>MB:</code> labels on the emails in Outlook, writes the digest and prints it. Nothing is sent without <code>--send</code>, and nothing is marked processed without <code>--commit</code>. Emails already in the archive never go to the AI again. Emails the AI failed on in the last 7 days are retried.</p>
+      <p>Progress goes to stderr as <code>[mm:ss]</code> lines. With no new mail and no <code>--digest</code>, it prints <code>No new emails, so no digest.</code> Only one run happens at a time (<code>data/run.lock</code>, released by the OS even after a crash).</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Flag</th><th scope="col">Does</th></tr></thead>
+          <tbody>
+            <tr><td><code>--all</code></td><td>Processes every inbox email, ignoring the cursor. Saved emails reuse their classification. The digest still covers only new mail unless you add <code>--digest</code>.</td></tr>
+            <tr><td><code>--backfill</code></td><td>Saves the whole inbox to the archive. Implies <code>--all</code>; no digest unless <code>--digest</code> is given; oldest conversations first; saves every 25 emails, so <kbd>Ctrl</kbd>+<kbd>C</kbd> keeps progress; resumable; advances the cursor to the newest email at the end.</td></tr>
+            <tr><td><code>--digest SCOPE</code></td><td>What the digest summarises: <code>new</code> (default), <code>this-week</code>, <code>this-month</code>, <code>last-month</code>, <code>older</code>, <code>all</code>. Period scopes are read from the archive. Over 40 emails, it summarises parts of 25 (4 at a time) and merges them. Period digests use the headings STILL OPEN, DEADLINES &amp; MEETINGS, KEY EVENTS, NOISE.</td></tr>
+            <tr><td><code>--as-of YYYY-MM-DD</code></td><td>With a period scope: count the period from that day instead of today. <code>serve</code> uses it to catch up a missed summary.</td></tr>
+            <tr><td><code>--json</code></td><td>Prints the selected emails as a JSON array on stdout (full body and classification); everything else goes to stderr. Prints <code>[]</code> on a quiet day. The output is unencrypted email text.</td></tr>
+            <tr><td><code>--send</code></td><td>Sends the digest to every active destination, then the UPCOMING EVENTS calendar (unless <code>EVENTS_DAYS=0</code>). Every bullet links to its email. Long digests are split per section, tagged <code>· k/n</code>, paced 0.5 s apart, with <code>429</code> retries.</td></tr>
+            <tr><td><code>--commit</code></td><td>Advances the cursor so these emails aren't shown again. Refused when only list previews were read or the archive couldn't be saved (exit 4), or when <code>--send</code> reached no destination (exit 1).</td></tr>
+            <tr><td><code>--plain</code></td><td>Saves this run's month files as plain <code>YYYY-MM.json</code> instead of encrypted <code>.enc</code>. A later run without it re-encrypts the months it touches. <code>--no-password</code> is the old name and still works.</td></tr>
+            <tr><td><code>--quiet</code></td><td>Leaves out email lines and digest text; only progress, counts and results print. <code>serve</code> uses it so logs hold no email content.</td></tr>
+          </tbody>
+        </table>
+      </div>
+<pre data-copy><code>uv run mailbrief run                             # preview: nothing sent or marked processed
+uv run mailbrief run --send --commit             # the daily job
+uv run mailbrief run --digest this-month         # month summary from the archive
+uv run mailbrief run --backfill --digest all     # archive everything, then summarise it
+uv run mailbrief run --json &gt; today.json         # export (unencrypted)</code></pre>
+      <div class="table-wrap">
+        <table>
+          <caption>Exit codes</caption>
+          <thead><tr><th scope="col">Code</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td>0</td><td>Success, including no new mail</td></tr>
+            <tr><td>1</td><td>Cursor not advanced: the digest reached no destination</td></tr>
+            <tr><td>2</td><td>No saved session, or it expired: run <code>mailbrief login</code></td></tr>
+            <tr><td>3</td><td>Another run is in progress; nothing done</td></tr>
+            <tr><td>4</td><td>Digest sent, but <code>--commit</code> refused (previews only, or archive not saved); the cursor is kept</td></tr>
+            <tr><td>5</td><td>Outlook opened, but its inbox list couldn't be read (usually an Outlook format change)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="doc-section" id="cmd-emails">
+      <h2><code>mailbrief emails</code></h2>
+<pre><code>mailbrief emails [--period P] [--day YYYY-MM-DD] [--search TEXT]
+                 [--show N | --thread N] [--digest [--send]] [--export FILE]</code></pre>
+      <p>Browses the saved archive offline: no Outlook, no AI. Without flags it lists this week's emails grouped by thread, newest activity first, replies indented with <code>↳</code>, your messages as <strong>You</strong>, answered ones marked <strong>✓ replied</strong>. The footer counts inbox emails per period.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Flag</th><th scope="col">Does</th></tr></thead>
+          <tbody>
+            <tr><td><code>--period P</code></td><td><code>this-week</code> (default), <code>this-month</code>, <code>last-month</code>, <code>older</code>. Computed from the received date when you view.</td></tr>
+            <tr><td><code>--day YYYY-MM-DD</code></td><td>Emails received that day, in <code>DEFAULT_TIMEZONE</code>.</td></tr>
+            <tr><td><code>--search TEXT</code></td><td>Case-insensitive match in sender name, address, subject or body, across all periods unless <code>--period</code> is given.</td></tr>
+            <tr><td><code>--show N</code></td><td>Opens email #N of the same filtered list: headers, classification, summary, action items, deadline, your labels, thread outline, full body.</td></tr>
+            <tr><td><code>--thread N</code></td><td>Prints the whole conversation of email #N. Cannot be combined with <code>--show</code>.</td></tr>
+            <tr><td><code>--digest</code></td><td>Prints the digest(s) saved on <code>--day</code> (default today), each headed with its scope and time.</td></tr>
+            <tr><td><code>--send</code></td><td>With <code>--digest</code>: resends the latest saved digest to all destinations, split as <code>run --send</code> would, plus a fresh events calendar. No Outlook, no AI. Without <code>--digest</code> it is rejected (exit 2).</td></tr>
+            <tr><td><code>--export FILE</code></td><td>Writes the listed emails to FILE as plain, unencrypted JSON.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Filters combine freely. Use the same filters with <code>--show</code> and <code>--thread</code> as when you listed, so the numbers match.</p>
+<pre data-copy><code>uv run mailbrief emails --search fee
+uv run mailbrief emails --search fee --show 2
+uv run mailbrief emails --digest --day 2026-10-16 --send</code></pre>
+      <p>Exit codes: 0 OK (also nothing matched); 1 <code>N</code> out of range, a file can't be decrypted, or a resend had no digest or reached no destination; 2 bad <code>--day</code>, or <code>--send</code> without <code>--digest</code>.</p>
+    </section>
+
+    <section class="doc-section" id="cmd-events">
+      <h2><code>mailbrief events</code></h2>
+<pre><code>mailbrief events [--days N] [--past N] [--send]</code></pre>
+      <p>The UPCOMING EVENTS calendar, built by code from the events the classifier saved for each email. No Outlook, no AI. Grouped by day, soonest first; boosted ⭐ events first within a day; the same event in two emails is shown once. Undated events only appear in the morning message on the day their email arrives.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Flag</th><th scope="col">Does</th></tr></thead>
+          <tbody>
+            <tr><td><code>--days N</code></td><td>How far ahead, 0 to 365 (default <code>EVENTS_DAYS</code>, 14). <code>--days 0</code> needs <code>--past</code>.</td></tr>
+            <tr><td><code>--past N</code></td><td>Also the last N days (0 to 365), headed like <code>MON 13 OCT (PAST)</code>.</td></tr>
+            <tr><td><code>--send</code></td><td>Sends exactly what would be printed to all destinations.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Older mail has no events until it is reclassified with <a href="#cmd-labels-retag">labels retag</a>. Exit codes: 0 done or nothing found; 1 archive unreadable or <code>--send</code> reached no destination; 2 <code>--days</code>/<code>--past</code> outside 0–365, or <code>--days 0</code> without <code>--past</code>.</p>
+    </section>
+
+    <section class="doc-section" id="cmd-labels">
+      <h2><code>mailbrief labels</code></h2>
+<pre><code>mailbrief labels {status | apply | clear | retag} …</code></pre>
+      <p>MailBrief's classification as Outlook categories, visible on web, desktop and phone. Each inbox email gets a category label and a priority label. Your own categories are never touched; only <code>MB:</code> ones are swapped. Read state, folder and flags don't change. Search Outlook with <code>category:"MB: Urgent"</code>.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Category</th><th scope="col">Colour</th><th scope="col">Priority</th><th scope="col">Colour</th></tr></thead>
+          <tbody>
+            <tr><td><code>MB: Urgent</code></td><td>red</td><td><code>MB: P1</code></td><td>dark red</td></tr>
+            <tr><td><code>MB: Needs Reply</code></td><td>orange</td><td><code>MB: P2</code></td><td>orange</td></tr>
+            <tr><td><code>MB: Meetings</code></td><td>purple</td><td><code>MB: P3</code></td><td>yellow</td></tr>
+            <tr><td><code>MB: FYI</code></td><td>blue</td><td><code>MB: P4</code></td><td>teal</td></tr>
+            <tr><td><code>MB: Newsletter</code></td><td>green</td><td><code>MB: P5</code></td><td>grey</td></tr>
+            <tr><td><code>MB: Low Priority</code></td><td>grey</td><td></td><td></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Every <code>run</code> labels archived emails whose labels are out of date, up to 400 per run, unless <code>OUTLOOK_LABELS=off</code>. Labels you remove by hand aren't put back. Only inbox emails from other people with a real classification are labelled.</p>
+      <p>Exit codes for all subcommands: 0 done, nothing to do, or dry run; 1 you answered no (or no terminal and no <code>--yes</code>), or the archive or <code>data/rules.json</code> can't be read; 2 bad options or Outlook needs <code>mailbrief login</code>; 3 a run is in progress.</p>
+
+      <h3 id="cmd-labels-status"><code>labels status</code></h3>
+<pre><code>mailbrief labels status</code></pre>
+      <p>Per period (this-week, this-month, last-month, older, all): emails <strong>labelled</strong>, <strong>pending</strong> (the next run labels them) and <strong>cleared</strong> (you removed them; left alone until <code>apply</code>).</p>
+
+      <h3 id="cmd-labels-apply"><code>labels apply</code></h3>
+<pre><code>mailbrief labels apply [--period P] [--days N] [--limit N] [--dry-run]</code></pre>
+      <p>Labels now: everything pending, plus emails you cleared. Re-creates the coloured categories if you deleted them. After adding a course or sender rule, <code>--dry-run</code> shows which emails will get it.</p>
+
+      <h3 id="cmd-labels-clear"><code>labels clear</code></h3>
+<pre><code>mailbrief labels clear (--period P | --days N | --all | --label NAME)
+                       [--limit N] [--colours] [--everywhere] [--dry-run] [--yes]</code></pre>
+      <p>Removes <code>MB:</code> labels; your own categories stay. Shows how many emails and asks <code>Go ahead? [y/N]</code>. Cleared emails stay cleared on later runs; new mail is still labelled.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Flag</th><th scope="col">Does</th></tr></thead>
+          <tbody>
+            <tr><td><code>--period P</code></td><td><code>this-week</code>, <code>this-month</code>, <code>last-month</code>, <code>older</code></td></tr>
+            <tr><td><code>--days N</code></td><td>Emails from the last N days</td></tr>
+            <tr><td><code>--all</code></td><td>Every email MailBrief labelled</td></tr>
+            <tr><td><code>--colours</code></td><td>Also deletes the 11 <code>MB:</code> categories from your category list, which strips them from every email</td></tr>
+            <tr><td><code>--label NAME</code></td><td>Only one of your own labels (all periods by default). Refused while a rule still gives it, and for built-in labels</td></tr>
+            <tr><td><code>--everywhere</code></td><td>With <code>--label</code>: from every email in the mailbox and your category list; ignores <code>--period</code>/<code>--days</code>/<code>--limit</code></td></tr>
+            <tr><td><code>--limit N</code></td><td>At most N emails, newest first</td></tr>
+            <tr><td><code>--dry-run</code></td><td>Shows what would change without touching Outlook</td></tr>
+            <tr><td><code>--yes</code></td><td>Skips the confirmation</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="cmd-labels-retag"><code>labels retag</code></h3>
+<pre><code>mailbrief labels retag (--period P | --days N) [--limit N] [--dry-run] [--yes]</code></pre>
+      <p>Asks the AI again about saved emails, with your current profile and topics, and updates their labels and events. About one AI call per email; it asks first. Images are fetched again (opening Outlook when needed). Failed calls keep the old classification. <code>--dry-run</code> shows how many emails and calls; <code>--limit N</code> caps the emails, newest first.</p>
+    </section>
+
+    <section class="doc-section" id="cmd-rules">
+      <h2><code>mailbrief rules</code></h2>
+<pre><code>mailbrief rules {list | add | remove | profile} …</code></pre>
+      <p>Your own labels, beside category and priority, stored in <code>data/rules.json</code> (plain JSON, git-ignored, editable by hand). Sender rules name their label with <code>--label</code>; see <a href="#cmd-rules-add">rules add</a>. A broken file never stops the digest: the run warns, classifies without rules and skips Outlook labelling that run.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Kind</th><th scope="col">Matched by</th><th scope="col">Gives</th></tr></thead>
+          <tbody>
+            <tr><td>course</td><td>Code, no AI: the code as a whole word in subject, sender name or first 1,000 body characters</td><td><code>MB: CS1101S</code></td></tr>
+            <tr><td>sender</td><td>Code, no AI: an exact address, or part of the sender's name (no <code>@</code>)</td><td><code>MB: Prof Tan</code></td></tr>
+            <tr><td>topic</td><td>AI: the classifier picks matching topic names</td><td><code>MB: Networking</code></td></tr>
+            <tr><td>profile</td><td>AI: who you are; used for priority and boosts</td><td>(no label)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Course and sender rules apply to the whole archive on the next run or <code>labels apply</code>. Topics and the profile apply to new mail; use <code>labels retag</code> for older mail. Names are up to 40 characters, without <code>,</code> or <code>;</code>, and can't be a built-in label. Exit codes: 0 done; 1 rule not found or rules.json unreadable; 2 bad rule.</p>
+
+      <h3 id="cmd-rules-list"><code>rules list</code></h3>
+<pre><code>mailbrief rules list</code></pre>
+      <p>Your rules and profile, with how many saved emails each matches. Shows the exact error if rules.json is broken.</p>
+
+      <h3 id="cmd-rules-add"><code>rules add</code></h3>
+<pre><code>mailbrief rules add {course | sender | topic} KEY [DESCRIPTION]
+                    [--label NAME] [--direct] [--priority 1-5] [--boost]</code></pre>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Argument / flag</th><th scope="col">Does</th></tr></thead>
+          <tbody>
+            <tr><td><code>KEY</code></td><td>Course code, sender address (or part of a name), or topic name</td></tr>
+            <tr><td><code>DESCRIPTION</code></td><td>Topic only: what counts, in plain words</td></tr>
+            <tr><td><code>--label NAME</code></td><td>Sender only: the label to give, e.g. <code>"Prof Tan"</code></td></tr>
+            <tr><td><code>--direct</code></td><td>Sender only: only mail where you are the only To recipient</td></tr>
+            <tr><td><code>--priority 1-5</code></td><td>Matching mail is at least this priority (1 most urgent)</td></tr>
+            <tr><td><code>--boost</code></td><td>Course or sender: always list under OPPORTUNITIES &amp; EVENTS with ⭐ (and at least P2)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Adding the same key again replaces the rule. Topic labels boost an email when the AI also judges it fits your profile.</p>
+<pre data-copy><code>uv run mailbrief rules add course CS2103T --priority 2
+uv run mailbrief rules add sender tan@example.edu --label "Prof Tan" --direct --priority 1
+uv run mailbrief rules add sender "Career Centre" --label Careers --boost
+uv run mailbrief rules add topic Networking "career fairs, meetups, recruiter outreach" --priority 2</code></pre>
+
+      <h3 id="cmd-rules-remove"><code>rules remove</code></h3>
+<pre><code>mailbrief rules remove {course | sender | topic} KEY</code></pre>
+      <p>Removes the rule. Emails already labelled keep the label; take it off with <code>labels clear --label NAME</code>.</p>
+
+      <h3 id="cmd-rules-profile"><code>rules profile</code></h3>
+<pre><code>mailbrief rules profile TEXT</code></pre>
+      <p>Sets who you are and what you want, e.g. <code>"Year 2 CS student looking for internships"</code>. <code>""</code> clears it. The classifier and the digest both see it.</p>
+    </section>
+
+    <section class="doc-section" id="cmd-add-destination">
+      <h2><code>mailbrief add-destination</code></h2>
+<pre><code>mailbrief add-destination telegram [--chat-id ID]</code></pre>
+      <p>Registers where digests go and who may chat with the bot. Destinations can only be added this way, from your machine. Interactive: message your bot first, then pick your chat from a single <code>getUpdates</code> lookup; a test message is sent. <code>--chat-id ID</code> skips the lookup and the test message. Stop <code>serve</code> first, or use <code>--chat-id</code>, because Telegram allows one reader at a time.</p>
+      <p>Writes <code>data/destinations.json</code>. Adding the same chat replaces it; set <code>"active": false</code> by hand to pause one. Exit codes: 0 added; 1 no chats found or invalid choice; 2 unknown type (only <code>telegram</code> exists).</p>
+    </section>
+
+    <section class="doc-section" id="cmd-index">
+      <h2><code>mailbrief index</code></h2>
+<pre><code>mailbrief index {status | update | rebuild}</code></pre>
+      <ul>
+        <li id="cmd-index-status"><code>status</code>: counts only (emails, chunks, model, size, last update).</li>
+        <li id="cmd-index-update"><code>update</code>: embeds new or changed emails. Runs do this by themselves.</li>
+        <li id="cmd-index-rebuild"><code>rebuild</code>: embeds everything again, e.g. after changing <code>AI_EMBED_MODEL</code>.</li>
+      </ul>
+      <p>Every saved email with full text is cut into a header chunk plus body chunks of about 1,500 characters (at most 6) and sent to <code>AI_EMBED_MODEL</code> at <code>AI_BASE_URL</code>. Vectors and hashes are stored encrypted in <code>data/index.enc</code>, with no email text; it is safe to delete. Exit codes: 0 done; 1 archive unreadable or nothing indexed; 3 a run is in progress.</p>
+    </section>
+
+    <section class="doc-section" id="cmd-chat">
+      <h2><code>mailbrief chat</code></h2>
+<pre><code>mailbrief chat ["QUESTION"]</code></pre>
+      <p>Asks your saved emails in the terminal, as the Telegram chat does. With a question it answers once; without, it keeps asking until an empty line or <kbd>Ctrl</kbd>+<kbd>C</kbd>. Answers carry <code>[n]</code> refs and a numbered Sources list with Outlook links, or Closest matches when nothing was cited. Follow-ups work within a session. Needs the index; no Outlook is opened. Exit codes: 0 done; 1 no index yet or archive unreadable.</p>
+    </section>
+
+    <section class="doc-section" id="cmd-bot">
+      <h2><code>mailbrief bot</code></h2>
+<pre><code>mailbrief bot</code></pre>
+      <p>Runs only the Telegram chat listener in the foreground, without the scheduler, until <kbd>Ctrl</kbd>+<kbd>C</kbd>. For testing; <code>serve</code> already runs it. Exit codes: 0 stopped; 2 <code>CHAT=off</code> or no bot token; 3 <code>serve</code> is running.</p>
+    </section>
+
+    <section class="doc-section" id="cmd-serve">
+      <h2><code>mailbrief serve</code></h2>
+<pre><code>mailbrief serve [--at SCHEDULE]</code></pre>
+      <p>Runs forever and fires runs on the <a href="#run-at">RUN_AT</a> schedule, plus the Telegram chat when <code>CHAT=on</code>. <code>--at "daily 18:00"</code> tries a schedule without editing <code>.env</code>.</p>
+      <ul>
+        <li>Checks the clock every 30 s, so it notices wake-ups. Missed slots run once <code>serve</code> is back: only the latest per scope. No catch-up on the very first start.</li>
+        <li>Each run is a child process with a 45-minute limit. A failed run is retried after 15 minutes, up to 3 attempts, then you get one Telegram message (at most once a day).</li>
+        <li>An expired login isn't retried: you get one Telegram message a day asking you to send <code>/login</code>.</li>
+        <li>Scheduled runs use <code>--quiet</code>, so <code>data/logs/</code> never holds subjects or digest text.</li>
+        <li>Stopping (<kbd>Ctrl</kbd>+<kbd>C</kbd>, <code>mailbrief stop</code>, <code>docker compose down</code>) lets a run in progress finish, including a <code>/sync</code> run. A second <kbd>Ctrl</kbd>+<kbd>C</kbd> stops at once.</li>
+      </ul>
+      <p>Exit codes: 0 stopped normally; 2 bad schedule; 3 already running; 130 forced stop.</p>
+    </section>
+
+    <section class="doc-section" id="cmd-stop">
+      <h2><code>mailbrief stop</code></h2>
+<pre><code>mailbrief stop</code></pre>
+      <p>Asks a running <code>serve</code> (hidden, or in another terminal) to stop. Idle, it stops within a second. During a run it waits up to 10 s, then tells you it is finishing the current run. Exit code 0. To stop only a run and keep <code>serve</code> going, in PowerShell:</p>
+<pre data-copy><code>Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%mailbrief.main run%'" | ForEach-Object { Stop-Process -Id $_.ProcessId }</code></pre>
+    </section>
+
+    <section class="doc-section" id="cmd-status">
+      <h2><code>mailbrief status</code></h2>
+<pre><code>mailbrief status</code></pre>
+      <p>Whether <code>serve</code> is running (pid, since when), the schedule, next run, last run and its result (<code>ok</code>, <code>login needed</code>, <code>sent, but not marked processed (cursor kept)</code>, <code>failed (exit N)</code>), autostart state and the log file. Exit code 0.</p>
+    </section>
+
+    <section class="doc-section" id="cmd-autostart">
+      <h2><code>mailbrief autostart</code></h2>
+<pre><code>mailbrief autostart {on | off}</code></pre>
+      <p>Windows only. <code>on</code> creates a Task Scheduler task named <strong>MailBrief</strong> that starts <code>serve</code> hidden (<code>pythonw</code>) at logon, as you, on battery too, with no time limit. <code>off</code> removes it; a running <code>serve</code> keeps going until <code>mailbrief stop</code>. Start it now with <code>schtasks /Run /TN MailBrief</code>. No admin rights needed. Exit codes: 0 done; 1 Task Scheduler refused; 2 not Windows.</p>
+    </section>
+
+    <section class="doc-section" id="telegram">
+      <h2>Telegram commands</h2>
+      <p>The chat runs inside <code>serve</code> (or <code>bot</code>) by long polling: no webhook, no open port. Only your registered private chats get answers; everyone else and every group is ignored. Anything that isn't a command is a question about your email, answered with ↗ links, a Sources list and buttons for the sources' attachments. The last 3 questions and answers per chat are kept in memory only.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr id="tg-start"><td><code>/start</code>, <code>/help</code></td><td>What the bot can do</td></tr>
+            <tr id="tg-new"><td><code>/new</code></td><td>Forgets this conversation</td></tr>
+            <tr id="tg-sync"><td><code>/sync</code></td><td>Checks for new mail now: a normal run with <code>--send</code>. With nothing new: <code>✅ No new mail since the last check.</code> It reports a busy run, an expired login, an undelivered digest or a timeout in plain words</td></tr>
+            <tr id="tg-login"><td><code>/login</code></td><td>A one-time sign-in link (as <a href="#cmd-login-remote"><code>login --remote</code></a>) for when the Outlook login expires</td></tr>
+            <tr id="tg-digest"><td><code>/digest</code></td><td>Sends the latest saved digest again, with links, then the events calendar</td></tr>
+            <tr id="tg-events"><td><code>/events [days]</code></td><td>The upcoming events calendar; days 1 to 365 (default <code>EVENTS_DAYS</code>, or 14 when that is 0)</td></tr>
+            <tr id="tg-rules"><td><code>/rules</code> (old name <code>/labels</code>)</td><td>Your label rules, as <code>mailbrief rules list</code></td></tr>
+            <tr id="tg-rule"><td><code>/rule</code> (old name <code>/label</code>)</td><td><code>/rule add course CS2040S [p2] [boost]</code><br><code>/rule add sender a@b.c "Prof X" [direct] [boost] [p1]</code><br><code>/rule add topic Networking "career fairs, meetups" [p2]</code><br><code>/rule remove course|sender|topic KEY</code></td></tr>
+            <tr id="tg-profile"><td><code>/profile text</code></td><td>Sets your profile, as <code>mailbrief rules profile</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Unknown commands get <code>I don't know /x. /help lists what I can do.</code> Tapping an attachment button fetches the file from Outlook in memory and sends it; buttons expire when <code>serve</code> restarts. <code>/rules</code> is about your own labels; <code>mailbrief labels</code> is the Outlook categories.</p>
+    </section>
+
+    <section class="doc-section" id="configuration">
+      <h2>Configuration (<code>.env</code>)</h2>
+      <p>Copy <code>.env.example</code> to <code>.env</code>. <code>AI_API_KEY</code> and <code>TELEGRAM_BOT_TOKEN</code> may also be user environment variables.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Variable</th><th scope="col">Default</th><th scope="col">Affects</th></tr></thead>
+          <tbody>
+            <tr><td><code>SESSION_ENCRYPTION_KEY</code></td><td>required</td><td>Encrypts <code>session.enc</code>, the archive and the index. Lose it and they are unreadable</td></tr>
+            <tr><td><code>AI_BASE_URL</code></td><td>required</td><td>The OpenAI-compatible endpoint your email text is sent to</td></tr>
+            <tr><td><code>AI_API_KEY</code></td><td>(none)</td><td>The endpoint's key; empty for a keyless local server</td></tr>
+            <tr><td><code>AI_CLASSIFIER_MODEL</code></td><td><code>qwen3.6:35b</code></td><td>Classifies text-only emails</td></tr>
+            <tr><td><code>AI_VISION_MODEL</code></td><td><code>qwen3.6:35b</code></td><td>Classifies emails with images</td></tr>
+            <tr><td><code>AI_DIGEST_MODEL</code></td><td><code>qwen3.8:27b</code></td><td>Writes the digest</td></tr>
+            <tr><td><code>AI_ANSWER_MODEL</code></td><td><code>qwen3.8:27b</code></td><td>Writes chat answers</td></tr>
+            <tr><td><code>AI_EMBED_MODEL</code></td><td><code>bge-m3</code></td><td>Search vectors; changing it rebuilds the index on the next update</td></tr>
+            <tr><td><code>AI_FALLBACK_MODEL</code></td><td><code>AI_CLASSIFIER_MODEL</code></td><td>Used when another model gives no answer in time. Empty = never switch</td></tr>
+            <tr><td><code>AI_CHAT_TEMPLATE_KWARGS</code></td><td><code>off</code></td><td><code>on</code> only for Qwen/Ollama servers accepting <code>enable_thinking</code></td></tr>
+            <tr><td><code>TELEGRAM_BOT_TOKEN</code></td><td>(none)</td><td>Everything that talks to Telegram</td></tr>
+            <tr><td><code>DEFAULT_TIMEZONE</code></td><td><code>Asia/Singapore</code></td><td>Displayed times, <code>--day</code>, periods, month files, <code>RUN_AT</code></td></tr>
+            <tr><td><code>RUN_AT</code></td><td><code>daily 07:30</code></td><td>When <code>serve</code> runs (<a href="#run-at">grammar</a>)</td></tr>
+            <tr><td><code>OUTLOOK_LABELS</code></td><td><code>on</code></td><td><code>off</code> stops <code>run</code> from labelling in Outlook</td></tr>
+            <tr><td><code>ARCHIVE_DAYS</code></td><td><code>0</code> (forever)</td><td>Over 0: <code>run</code> deletes month files that ended more than this many days ago</td></tr>
+            <tr><td><code>REMOTE_IMAGES</code></td><td><code>on</code></td><td>Downloads images linked from email bodies, with safety checks; the image servers see your IP. <code>off</code> = text and attached/inline images only</td></tr>
+            <tr><td><code>EVENTS_DAYS</code></td><td><code>14</code></td><td>Days ahead for UPCOMING EVENTS; <code>0</code> stops <code>run --send</code> from sending it</td></tr>
+            <tr><td><code>CHAT</code></td><td><code>on</code></td><td><code>off</code> keeps the bot send-only</td></tr>
+            <tr><td><code>BROWSER_WS_URL</code></td><td>(empty)</td><td>Empty = local Chromium; set to use a Browserless/CDP browser</td></tr>
+            <tr><td><code>PUBLIC_URL</code></td><td>host address, else <code>http://localhost:$PORT</code></td><td>The <code>/login</code> link's address; must be <code>https://</code> unless localhost</td></tr>
+            <tr><td><code>PORT</code></td><td><code>8080</code></td><td>The sign-in page's port (Railway and Render set it)</td></tr>
+            <tr><td><code>LOGIN_PAGE</code></td><td>(empty); automatic on Render</td><td><code>always</code> keeps the port open, 404 except an open sign-in</td></tr>
+            <tr><td><code>LOGIN_TUNNEL</code></td><td>(empty)</td><td><code>cloudflared</code>: a temporary https tunnel for <code>/login</code> on your PC</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Set by hosts, not by you: <code>RENDER</code>, <code>RENDER_EXTERNAL_URL</code>, <code>RAILWAY_PUBLIC_DOMAIN</code>. Docker images also use <code>TZ</code>.</p>
+    </section>
+
+    <section class="doc-section" id="run-at">
+      <h2><code>RUN_AT</code> schedule</h2>
+<pre><code>RUN_AT   = entry { ";" entry }
+entry    = days " " time [ " " scope ]
+days     = day { "," day }
+day      = daily | weekdays | weekends | mon | tue | wed | thu | fri | sat | sun | day-N   (N = 1..31)
+time     = H:MM or HH:MM, 24-hour, in DEFAULT_TIMEZONE
+scope    = new | this-week | this-month | last-month | older | all      (default new)</code></pre>
+      <p>Day names and scopes are case-insensitive. A <code>new</code> entry runs <code>run --send --commit --quiet</code>. Any other scope runs <code>run --send --quiet --digest &lt;scope&gt;</code> without <code>--commit</code>, so a weekly summary doesn't hide mail from the next daily digest. <code>day-31</code> fires only in months with a 31st. A bad schedule is refused before anything starts (exit 2), e.g. <code>Bad schedule: 'daily 7.30': time must look like 07:30</code>.</p>
+<pre data-copy><code>RUN_AT=daily 07:30
+RUN_AT=daily 07:30; daily 18:00
+RUN_AT=weekdays 08:00; weekends 10:00
+RUN_AT=mon,wed,fri 07:30
+RUN_AT=daily 07:30; sun 20:00 this-week; day-1 09:00 last-month</code></pre>
+    </section>
+
+    <section class="doc-section" id="files">
+      <h2>Files</h2>
+      <p>All of <code>data/</code> and <code>.env</code> are git-ignored. Exports you write elsewhere are not.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">File</th><th scope="col">Written by</th><th scope="col">Contents</th></tr></thead>
+          <tbody>
+            <tr><td><code>data/session.enc</code></td><td><code>login</code>, refreshed by <code>run</code></td><td>Outlook cookies, encrypted. Full mailbox access: treat it like a password</td></tr>
+            <tr><td><code>data/archive/YYYY-MM.enc</code></td><td><code>run</code></td><td>That month's emails, classifications and digests, encrypted</td></tr>
+            <tr><td><code>data/archive/YYYY-MM.json</code></td><td><code>run --plain</code></td><td>The same, unencrypted</td></tr>
+            <tr><td><code>data/index.enc</code></td><td><code>run</code>, <code>index</code>, <code>labels retag</code></td><td>Search vectors and hashes, encrypted, no email text</td></tr>
+            <tr><td><code>data/cursor.json</code></td><td><code>run --commit</code>, <code>run --backfill</code></td><td>Newest processed time and the last 500 IDs. Delete it to restart "new mail" tracking (24 h back)</td></tr>
+            <tr><td><code>data/rules.json</code></td><td><code>rules</code>, or you</td><td>Your own labels and profile</td></tr>
+            <tr><td><code>data/destinations.json</code></td><td><code>add-destination</code></td><td>Telegram chat IDs</td></tr>
+            <tr><td><code>data/schedule.json</code></td><td><code>serve</code></td><td>Schedule, last slot done, last result, next run</td></tr>
+            <tr><td><code>data/logs/YYYY-MM.log</code></td><td><code>serve</code></td><td>Service lines and run progress, no email content</td></tr>
+            <tr><td><code>data/run.lock</code>, <code>data/serve.lock</code></td><td><code>run</code>, <code>serve</code></td><td>Empty; the OS lock is what matters</td></tr>
+            <tr><td><code>data/stop.request</code></td><td><code>stop</code></td><td>Empty; removed when <code>serve</code> stops</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Every file is written atomically (temporary file, then rename), and the cursor only advances after delivery, so even a hard kill is safe.</p>
+    </section>
+
+    <section class="doc-section" id="exit-codes">
+      <h2>Exit codes at a glance</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Command</th><th scope="col">0</th><th scope="col">1</th><th scope="col">2</th><th scope="col">Other</th></tr></thead>
+          <tbody>
+            <tr><td><code>login</code></td><td>saved</td><td>sign-in timed out or didn't stick</td><td>not https / port blocked / cloudflared</td><td>3 run using Outlook</td></tr>
+            <tr><td><code>run</code></td><td>success</td><td>not delivered, cursor kept</td><td>no or expired session</td><td>3 run in progress, 4 cursor refused, 5 inbox unreadable</td></tr>
+            <tr><td><code>emails</code></td><td>success</td><td>bad number / can't decrypt / not resent</td><td>bad <code>--day</code> / <code>--send</code> alone</td><td></td></tr>
+            <tr><td><code>events</code></td><td>done</td><td>archive unreadable / not delivered</td><td>bad <code>--days</code>/<code>--past</code></td><td></td></tr>
+            <tr><td><code>labels</code></td><td>done / dry run</td><td>answered no / unreadable</td><td>bad options / login needed</td><td>3 run in progress</td></tr>
+            <tr><td><code>rules</code></td><td>done</td><td>not found / unreadable</td><td>bad rule</td><td></td></tr>
+            <tr><td><code>add-destination</code></td><td>added</td><td>no chats / bad choice</td><td>unknown type</td><td></td></tr>
+            <tr><td><code>index</code></td><td>done</td><td>archive unreadable / nothing indexed</td><td></td><td>3 run in progress</td></tr>
+            <tr><td><code>chat</code></td><td>done</td><td>no index / unreadable</td><td></td><td></td></tr>
+            <tr><td><code>bot</code></td><td>stopped</td><td></td><td>chat off / no token</td><td>3 serve running</td></tr>
+            <tr><td><code>serve</code></td><td>stopped</td><td></td><td>bad schedule</td><td>3 already running, 130 forced stop</td></tr>
+            <tr><td><code>stop</code>, <code>status</code></td><td>done</td><td></td><td></td><td></td></tr>
+            <tr><td><code>autostart</code></td><td>done</td><td>Task Scheduler refused</td><td>not Windows</td><td></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="doc-section" id="hosting">
+      <h2>Hosting</h2>
+      <p>A server runs the same <code>serve</code> in Docker. The repo has a <code>Dockerfile</code> (Python 3.11, uv, Chromium, non-root) and <code>compose.yaml</code> (<code>restart: unless-stopped</code>, a 10-minute stop grace period, <code>./data</code> as a volume, <code>shm_size: 1gb</code>). The image needs about 2 GB of disk.</p>
+      <h3 id="hosting-docker">Docker on your own server</h3>
+<pre data-copy><code>git clone https://github.com/KidCoderT/mail-manager.git
+cd mail-manager
+docker compose up -d --build
+docker compose logs -f
+docker compose exec mailbrief mailbrief status
+docker compose down</code></pre>
+      <p>Copy <code>.env</code>, <code>data/session.enc</code> and <code>data/destinations.json</code> across first (same key), or sign in with <code>/login</code>. For <code>/login</code> on a home server, uncomment the <code>ports:</code> line in <code>compose.yaml</code> and set <code>PUBLIC_URL</code> to an <code>https://</code> address behind a TLS proxy or tunnel.</p>
+      <div class="callout">
+        <p><strong>A cloud host sees your mail.</strong> Railway and Render hold <code>data/</code> on their volume and <code>SESSION_ENCRYPTION_KEY</code> as a variable, so they have both the ciphertext and the key. Check your organisation's policy first. Your own PC or server keeps mail in-house. Both hosts build the <code>Dockerfile</code> directly and ignore <code>compose.yaml</code>, so suspect Docker's 64 MB <code>/dev/shm</code> if Chromium crashes. Microsoft sign-ins from datacenter IPs may expire sooner.</p>
+      </div>
+      <h3 id="hosting-railway">Railway</h3>
+      <ol class="steps">
+        <li>New project from the GitHub repo; Railway builds the <code>Dockerfile</code>. Pick the region nearest you.</li>
+        <li>Add a volume mounted at <code>/app/data</code>. If runs fail with "permission denied" there, add <code>RAILWAY_RUN_UID=0</code>.</li>
+        <li>Variables: <code>SESSION_ENCRYPTION_KEY</code>, <code>AI_BASE_URL</code>, <code>AI_API_KEY</code>, <code>TELEGRAM_BOT_TOKEN</code>, <code>TZ</code>, <code>RUN_AT</code> and the rest of your <code>.env</code>.</li>
+        <li>Networking: generate a domain and type port <code>8080</code> by hand. Set no healthcheck path: nothing listens until a sign-in starts.</li>
+        <li>In the service shell, run <code>mailbrief add-destination telegram --chat-id &lt;your chat id&gt;</code>, then <code>mailbrief login --remote</code> and open the link. Later sign-ins: <code>/login</code>.</li>
+      </ol>
+      <h3 id="hosting-render">Render</h3>
+      <ol class="steps">
+        <li>New Web Service from the repo; Render detects the <code>Dockerfile</code>. The free plan can't run MailBrief (it sleeps and has no disk): use Starter or above, and Standard if Chromium runs out of memory.</li>
+        <li>Add a disk mounted at <code>/app/data</code> (1 GB is plenty).</li>
+        <li>Environment: <code>SESSION_ENCRYPTION_KEY</code>, <code>AI_BASE_URL</code>, <code>AI_API_KEY</code>, <code>TELEGRAM_BOT_TOKEN</code>, <code>TZ</code>, <code>RUN_AT</code>. Render sets <code>PORT</code> and <code>RENDER_EXTERNAL_URL</code>. Leave the health check path empty.</li>
+        <li>Render requires an open port, so <code>serve</code> keeps the sign-in server up on <code>$PORT</code>, answering 404 except to an open sign-in.</li>
+        <li>In Shell, run <code>mailbrief add-destination telegram --chat-id &lt;your chat id&gt;</code>, then send <code>/login</code>. (<code>login --remote</code> can't run there: <code>serve</code> holds the port.)</li>
+      </ol>
+      <p>To keep your history on either host, copy your PC's <code>data/</code> across (same key); otherwise <code>mailbrief run --backfill</code> refills it. Any other host that insists on an open port: <code>LOGIN_PAGE=always</code>.</p>
+    </section>
+
+    <section class="doc-section" id="recipes">
+      <h2>Recipes</h2>
+      <h3 id="recipe-first">First time</h3>
+<pre data-copy><code>uv run mailbrief login
+uv run mailbrief add-destination telegram
+uv run mailbrief run --send --commit
+uv run mailbrief run --backfill
+uv run mailbrief index rebuild</code></pre>
+      <p>Backfill after the first digest: it marks the whole inbox processed.</p>
+      <h3 id="recipe-resend">A digest didn't arrive: resend it</h3>
+<pre data-copy><code>uv run mailbrief emails --digest --send
+uv run mailbrief emails --digest --day 2026-10-16 --send</code></pre>
+      <h3 id="recipe-summary">What happened this month?</h3>
+<pre data-copy><code>uv run mailbrief run --digest this-month --send</code></pre>
+      <h3 id="recipe-labels">Labels: check, remove, bring back</h3>
+<pre data-copy><code>uv run mailbrief labels status
+uv run mailbrief labels clear --all --colours
+uv run mailbrief labels apply</code></pre>
+      <h3 id="recipe-find">Find an email and read the thread</h3>
+<pre data-copy><code>uv run mailbrief emails --search "acceptance fee"
+uv run mailbrief emails --search "acceptance fee" --thread 1</code></pre>
+      <h3 id="recipe-log">Keep a log of one run</h3>
+<pre data-copy><code>uv run mailbrief run --send --commit &gt; run.log 2&gt;&amp;1</code></pre>
+      <h3 id="recipe-expired">Session expired (exit 2)</h3>
+<pre data-copy><code>uv run mailbrief login</code></pre>
+      <p>Slow runs or <code>AI: no answer from …</code> mean the AI endpoint isn't answering; each call gives up after 2 retries, so the run fails instead of hanging.</p>
+    </section>
+
+    <section class="doc-section" id="privacy">
+      <h2>Privacy &amp; limits</h2>
+      <ul>
+        <li><strong>Stays on your machine:</strong> the browser session, the encrypted archive and the search index.</li>
+        <li><strong>Leaves it:</strong> email text and images go to <code>AI_BASE_URL</code>; digests, chat answers, quotes and requested files go to Telegram, whose bot chats aren't end-to-end encrypted. <code>CHAT=off</code> turns the chat off.</li>
+        <li><strong>Linked images:</strong> with <code>REMOTE_IMAGES=on</code>, senders' image servers see your IP.</li>
+        <li><strong>Prompt injection:</strong> the answering model reads email bodies but has no tools, can only reply in your chat, and never writes links; code builds them.</li>
+        <li><strong>Outlook links</strong> work only for someone signed in to your mailbox. Opening one marks the email read, as Outlook always does.</li>
+        <li><strong>Limits:</strong> Microsoft 365 on <code>outlook.office.com</code> only; it depends on Outlook's internal formats, which change; sign-ins expire on your organisation's schedule; one user; autostart is Windows-only.</li>
+        <li>Not affiliated with Microsoft or Telegram. Security reports: <a href="https://github.com/KidCoderT/mail-manager/blob/main/SECURITY.md">SECURITY.md</a>.</li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<form class="cmdline needs-js" id="terminal-form" autocomplete="off">
+  <label class="prompt" for="terminal-input"><span aria-hidden="true">❯</span><span class="visually-hidden">Command</span></label>
+  <div class="cmd-field">
+    <span class="ghost" aria-hidden="true"></span>
+    <input id="terminal-input" name="command" type="text" maxlength="120" placeholder="man run, /filter text, or home" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
+  </div>
+  <button type="submit">run <kbd>⏎</kbd></button>
+</form>
+
+<footer class="statusbar">
+  <p>MailBrief. MIT licensed. Not affiliated with Microsoft or Telegram.</p>
+  <nav aria-label="Footer">
+    <a href="index.html">home</a>
+    <a href="setup.html">setup</a>
+    <a href="docs.html">docs</a>
+    <a href="https://github.com/KidCoderT/mail-manager" rel="noopener noreferrer">github</a>
+    <a href="https://github.com/KidCoderT/mail-manager/blob/main/commands.md" rel="noopener noreferrer">commands.md</a>
+    <a href="https://github.com/KidCoderT/mail-manager/blob/main/SECURITY.md" rel="noopener noreferrer">security</a>
+    <a href="https://github.com/KidCoderT/mail-manager/blob/main/LICENSE" rel="noopener noreferrer">license</a>
+  </nav>
+</footer>
+</div>
+</body>
+</html>
