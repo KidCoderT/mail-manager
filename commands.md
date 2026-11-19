@@ -83,7 +83,7 @@ The same as **`/login`** in Telegram. Use it when MailBrief runs on a server (Ra
    - tap the picture to click;
    - type in the box and press **Send**, which hides your typing unless you tick "show";
    - the **Enter**, **Tab** and **⌫** buttons press those keys.
-3. **Sign in** as usual: NUS SSO, MFA, and tick **Stay signed in**.
+3. **Sign in** as usual: your organisation's sign-in page, MFA, and tick **Stay signed in**.
 4. **Saved and checked.** When your inbox list shows, the session is saved to `data/session.enc`, then checked by opening Outlook again with it.
    - On success you get **"Logged in ✅"**.
    - Then the web server and browser stop, and the link is dead.

@@ -59,7 +59,7 @@ Read it top to bottom once. After that, each section stands on its own as a refe
 4. sends that digest to your phone (Telegram),
 5. keeps a searchable, encrypted history.
 
-**The hard constraint:** it's a **work/university** Outlook account. Normally you'd use Microsoft's official API (Microsoft Graph), but that needs an administrator to approve an "app registration". You can't do that yourself. So MailBrief uses **the same website you use**, Outlook on the web, through an automated browser. To Microsoft, it looks like you using Outlook in a browser.
+**The hard constraint:** it's a **work/university** Outlook account. Microsoft's official API (Microsoft Graph) needs an "app registration" set up for the organisation, which is a bigger thing than a personal tool for one mailbox. So MailBrief works through **the same website you already use**, Outlook on the web, in a browser it drives: it uses the session you signed in to yourself, and can only do what you can do there by hand. Whether automating your own mailbox like this is allowed is your organisation's call: check its IT acceptable-use policy before you use it.
 
 **What it never does:** delete, move, send, reply, or even mark email as read. The **one** thing it changes is its own labels: Outlook categories named `MB: …` (section 7.16), and code refuses every other kind of write.
 
@@ -86,7 +86,7 @@ Your browser                                   Microsoft's servers
 Key facts this project relies on:
 
 - **The page is drawn from JSON.** The list you see is rendered from structured data that Outlook downloads. That data has real IDs, exact timestamps, sender addresses and so on. Reading the JSON is far more reliable than reading the screen.
-- **`service.svc` is Outlook's internal API.** Each request names an *action* (`FindConversation`, `GetItem`, `GetAttachment`, …) and carries an **authorization token** in its headers. The page's own JavaScript adds that token. If we copy it, we can make the same calls the page makes.
+- **`service.svc` is Outlook's internal API.** Each request names an *action* (`FindConversation`, `GetItem`, `GetAttachment`, …) and carries an **authorization token** in its headers. The page's own JavaScript adds that token. MailBrief runs inside that same signed-in page session, so its read requests carry the headers the page itself just used (kept in memory only, never saved or logged).
 - **The list is "virtualized".** Outlook only downloads about 50 conversations at first. More are fetched only when you **scroll with the mouse wheel**. A program that wants everything has to scroll.
 - **Focused Inbox** splits the inbox into two tabs, *Focused* and *Other*. Each is a separate `FindConversation` request (`FocusedViewFilter` 0 or 1). Load only one and you miss the other.
 - **A conversation** is a thread. Every reply or forward is a **new, separate email** that shares the thread's `ConversationId`. Nothing is ever edited in place.

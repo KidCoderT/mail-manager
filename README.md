@@ -4,9 +4,9 @@
 > **Scope:** one person's Outlook on the web (Microsoft 365), Playwright driving a **local Chromium**, Telegram delivery (more channels pluggable). [Browserless](https://www.browserless.io) is an optional later runtime. **Single-user only:** multi-user hosting is cancelled (§13).
 
 > ⚠️ **Disclaimer:**
-> - MailBrief is a personal project, not affiliated with or endorsed by Microsoft or NUS.
+> - MailBrief is a personal project. It is not affiliated with or endorsed by Microsoft, Telegram, or any university or employer.
 > - It uses Outlook on the web's **internal** API, not a public one, so it can break without warning.
-> - Use it only on **your own** mailbox, and check your organisation's IT and acceptable-use policies first.
+> - Use it only on **your own** mailbox. Automated access may be against your organisation's IT acceptable-use policy or Microsoft's terms: check first. You are responsible for how you use it.
 > - Email text is sent to whichever AI endpoint you configure.
 > - It comes with no warranty ([MIT License](LICENSE)).
 
