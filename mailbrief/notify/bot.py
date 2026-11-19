@@ -114,7 +114,7 @@ class Bot:
             self.say(chat_id, f"MailBrief isn't set up for that: {e}")
         except Exception as e:  # noqa: BLE001 - one bad message must not stop the bot
             _log(f"failed ({type(e).__name__})")
-            self.say(chat_id, "Sorry, that failed (it's in the log). Try again, or /new to start fresh.")
+            self.say(chat_id, f"Sorry, that failed: {why(e)}")
 
     def _question(self, chat_id: str, text: str) -> None:
         from mailbrief.ai import answer
@@ -168,7 +168,7 @@ class Bot:
             return
         except Exception as e:  # noqa: BLE001
             _log(f"file fetch failed ({type(e).__name__})")
-            self.say(chat_id, "Couldn't fetch that file from Outlook (it's in the log).")
+            self.say(chat_id, f"Couldn't fetch that file from Outlook: {why(e)}")
             return
         for f in files:
             try:
@@ -224,7 +224,13 @@ class Bot:
                 # Exit 0 covers "digest sent" and "nothing new": only the second needs a word from here.
                 quiet = "✅ No new mail since the last check." if _last_digest() == before else None
                 note = {0: quiet, 3: "A run was already in progress; its digest comes as usual.",
-                        2: "Outlook needs you to sign in again: send /login."}.get(code, f"The check failed (exit {code}); it's in the log.")
+                        2: "Outlook needs you to sign in again: send /login.",
+                        1: "The check ran, but the digest couldn't be delivered. I'll try again at the next scheduled run.",
+                        4: "The digest was sent, but those emails couldn't be marked as processed, so they'll be read again next time.",
+                        5: "Outlook opened, but its inbox list couldn't be read (Outlook may have changed). Try /sync again later.",
+                        -1: "The check took too long and was stopped. Try /sync again in a few minutes.",
+                        }.get(code, f"The check failed unexpectedly (exit code {code}). The details are in the log "
+                                    "on the machine MailBrief runs on (`mailbrief status` names the file).")
                 if note:
                     self.say(chat_id, note)
             finally:
@@ -258,7 +264,7 @@ class Bot:
                          "Set PORT to another number and try /login again.")
             except Exception as e:  # noqa: BLE001
                 _log(f"sign-in page failed ({type(e).__name__})")
-                self.say(chat_id, "The sign-in page failed (it's in the log). Send /login to try again.")
+                self.say(chat_id, f"The sign-in page failed: {why(e)} Send /login to try again.")
             finally:
                 self.logging_in.clear()
 
@@ -342,6 +348,27 @@ class Bot:
                 _log(f"poll failed ({type(e).__name__}); retrying in 10s")
                 stop.wait(10)
         _log("stopped")
+
+
+def why(e: Exception) -> str:
+    """An error in plain words with a next step, for a chat reply: you can't read the server's log from a phone.
+    Never includes email content (only the kind of failure)."""
+    import urllib.error
+
+    from mailbrief import archive, labels
+
+    if isinstance(e, labels.LoginNeeded):
+        return "Outlook needs you to sign in again. Send /login."
+    if isinstance(e, archive.ArchiveError):
+        return f"the saved emails couldn't be read ({e})."
+    if isinstance(e, urllib.error.HTTPError):
+        return f"the AI endpoint refused the request (HTTP {e.code}). Check the AI settings in .env."
+    if isinstance(e, (TimeoutError, urllib.error.URLError, ConnectionError)):
+        return "the AI didn't answer (it may be busy or unreachable). Try again in a minute."
+    if isinstance(e, telegram.TelegramError):
+        return f"Telegram refused it ({e})."
+    return (f"something unexpected went wrong ({type(e).__name__}). Try again, or /new to start fresh; the details "
+            "are in the log on the machine MailBrief runs on.")
 
 
 # ── defaults wired to the real world ─────────────────────────────────────────────────────────────────

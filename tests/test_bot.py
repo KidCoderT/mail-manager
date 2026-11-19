@@ -96,6 +96,9 @@ def test_commands_and_errors():
     api.updates = [msg(4, 111, "a question that crashes")]
     b.poll_once()
     assert api.sent()[-1]["text"].startswith("Sorry, that failed")  # answered politely, bot still alive
+    # The reply says what kind of failure it was and what to do, not "it's in the log".
+    assert "ZeroDivisionError" in api.sent()[-1]["text"] and "/new" in api.sent()[-1]["text"]
+    assert "didn't answer" in botmod.why(TimeoutError()) and "/login" in botmod.why(botmod_labels().LoginNeeded("x"))
 
     # A missing key (crypto / the AI client) is an ordinary exception: the listener says so and stays alive.
     def no_key(*a):
@@ -137,6 +140,11 @@ def test_commands_and_errors():
     texts = [p["text"] for p in api.sent()]
     # Nothing new: say so, instead of leaving "is it stuck?" hanging after the first reply.
     assert synced and "Checking for new mail" in texts[-2] and texts[-1].startswith("✅ No new mail")
+
+
+def botmod_labels():
+    from mailbrief import labels
+    return labels
 
 
 def test_label_command_parsing():
