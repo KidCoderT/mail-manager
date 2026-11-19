@@ -7,6 +7,8 @@ import time
 import urllib.error
 import urllib.request
 
+from mailbrief import ConfigError
+
 DEFAULT_BASE_URL = "https://soclaas-api.comp.nus.edu.sg/v1"
 RETRIES = 5  # busy (429) or server errors: backoff 3, 6, 12, 24, 48 s
 TIMEOUT_RETRIES = 2  # no answer at all: a hung endpoint usually stays hung, so give up within minutes
@@ -59,7 +61,7 @@ def _post(path: str, body: dict, timeout: float = 120, timeout_retries: int = TI
     got no answer only `timeout_retries` times. Every retry is printed, so a stall shows in the log."""
     key = os.environ.get("AI_API_KEY") or os.environ.get("SOCLAAS_API_KEY")
     if not key:
-        raise SystemExit("No AI key: set AI_API_KEY or SOCLAAS_API_KEY")
+        raise ConfigError("No AI key: set AI_API_KEY or SOCLAAS_API_KEY")
     url = os.environ.get("AI_BASE_URL", DEFAULT_BASE_URL).rstrip("/") + path
     req = urllib.request.Request(
         url,

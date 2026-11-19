@@ -3,11 +3,13 @@ import os
 
 from cryptography.fernet import Fernet
 
+from mailbrief import ConfigError
+
 
 def _fernet() -> Fernet:
     key = os.environ.get("SESSION_ENCRYPTION_KEY")
     if not key:
-        raise SystemExit("SESSION_ENCRYPTION_KEY is not set (see .env.example)")
+        raise ConfigError("SESSION_ENCRYPTION_KEY is not set (see .env.example)")
     return Fernet(key)
 
 

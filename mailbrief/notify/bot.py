@@ -14,6 +14,7 @@ from argparse import Namespace
 from datetime import datetime
 from io import StringIO
 
+from mailbrief import ConfigError
 from mailbrief.notify import telegram
 
 POLL_S = 20             # long-poll wait; telegram._api's own timeout (30 s) is longer
@@ -107,6 +108,9 @@ class Bot:
                 self._command(chat_id, text)
             else:
                 self._question(chat_id, text)
+        except ConfigError as e:  # a missing key in .env: only you can fix it, so say which
+            _log("failed (setup)")
+            self.say(chat_id, f"MailBrief isn't set up for that: {e}")
         except Exception as e:  # noqa: BLE001 - one bad message must not stop the bot
             _log(f"failed ({type(e).__name__})")
             self.say(chat_id, "Sorry, that failed (it's in the log). Try again, or /new to start fresh.")

@@ -11,6 +11,8 @@ from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
+from mailbrief import ConfigError
+
 AI_THREADS = 4
 BACKFILL_SAVE_EVERY = 25
 
@@ -220,6 +222,8 @@ def run(
                     threads.context_lines(e, thread_map[cid]),
                     your_rules,
                 )
+            except ConfigError:  # no AI key: every call would fail the same way, so stop the run
+                raise
             except Exception as ex:  # noqa: BLE001 - one bad call must not sink the run; retried next run
                 print(
                     f"warning: AI failed for one email ({type(ex).__name__}: {ex}); it will be retried next run",
@@ -1094,6 +1098,13 @@ def add_destination(type_: str, chat_id: str | None) -> int:
 
 
 def main() -> None:
+    try:
+        _main()
+    except ConfigError as e:  # a missing key: one line and exit 1, not a traceback
+        sys.exit(str(e))
+
+
+def _main() -> None:
     load_dotenv()
     # Emoji subjects and progress marks (✓) crash Windows' cp1252 encoding when output is piped.
     for stream in (sys.stdout, sys.stderr):

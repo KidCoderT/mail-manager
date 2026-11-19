@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import threading
 import time
@@ -93,6 +94,22 @@ def test_commands_and_errors():
     api.updates = [msg(4, 111, "a question that crashes")]
     b.poll_once()
     assert api.sent()[-1]["text"].startswith("Sorry, that failed")  # answered politely, bot still alive
+
+    # A missing key (crypto / the AI client) is an ordinary exception: the listener says so and stays alive.
+    def no_key(*a):
+        from mailbrief.storage import crypto
+        os.environ.pop("SESSION_ENCRYPTION_KEY", None)
+        crypto.encrypt({})
+
+    b.ask, key = no_key, os.environ.get("SESSION_ENCRYPTION_KEY")
+    api.updates = [msg(40, 111, "a question with no key")]
+    try:
+        b.poll_once()
+    finally:
+        b.ask = lambda *a: 1 / 0
+        if key:
+            os.environ["SESSION_ENCRYPTION_KEY"] = key
+    assert "SESSION_ENCRYPTION_KEY" in api.sent()[-1]["text"]
 
     synced = []
     b.run_sync = lambda: synced.append(1) or 0
