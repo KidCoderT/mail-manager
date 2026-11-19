@@ -88,6 +88,28 @@ def test_digest_refs():
     assert '"ref"' in digest._COMMON and "[3][7]" in digest._COMMON
 
 
+def test_digest_batches_keep_threads_together_in_time_order():
+    import json
+    from datetime import datetime, timedelta
+
+    from mailbrief.ai import digest
+
+    start = datetime(2026, 3, 2, 9)  # a Monday; the thread's replies fall on later weekdays
+    emails = [{"id": f"id{n}", "sender_name": "Ana", "sender_email": "ana@x.com", "subject": f"s{n}",
+               "received_at": start + timedelta(hours=7 * n), "conversation_id": "long" if n % 3 == 0 else f"c{n}"}
+              for n in range(60)]
+    seen, real = [], digest._ask
+    digest._ask = lambda text, thinking=True: seen.append(text) or "PART"
+    try:
+        digest.digest(emails, [{"category": "FYI", "priority": 3}] * 60)
+    finally:
+        digest._ask = real
+    order = [i["ref"] for text in seen[:-1] for i in json.loads(text.split("\n\n", 1)[1])]  # the last call merges
+    thread = [r for r in order if (r - 1) % 3 == 0]
+    assert len(order) == 60 and thread == sorted(thread)  # oldest first, whatever the weekday names sort like
+    assert order.index(thread[-1]) - order.index(thread[0]) == len(thread) - 1  # and all next to each other
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

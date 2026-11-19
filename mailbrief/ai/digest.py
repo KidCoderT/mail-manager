@@ -111,8 +111,10 @@ def digest(emails: list[dict], results: list[dict], scope: str = "new", on_part=
     profile = your_rules["profile"]
     items = _items(emails, results, your_rules)
     if len(items) > BATCH_ABOVE:
-        # Time order keeps a thread's emails (and related ones) in the same batch.
-        items.sort(key=lambda i: (i["thread"], i["received"]))
+        # Threads in the order they started, each thread's emails in time order, so a conversation stays in
+        # one batch. By number, not by text: "t10" sorts before "t2", and "Fri 06 Mar" before "Mon 02 Mar".
+        # (ref order is time order: callers pass the emails oldest first.)
+        items.sort(key=lambda i: (int(i["thread"][1:]), i["ref"]))
         batches = [items[n : n + BATCH] for n in range(0, len(items), BATCH)]
         parts, done = [None] * len(batches), 0
         with ThreadPoolExecutor(PARALLEL) as ex:
