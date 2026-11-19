@@ -63,7 +63,7 @@ def test_ask_pipeline_with_fakes():
             return '{"search": "midterm", "events": false}'
         return "Saturday [1].\nSEND: [1] seating.pdf"
 
-    real_complete, real_search = answer.complete, answer.__dict__.get("index")
+    real_complete = answer.complete
     answer.complete = fake_complete
     import mailbrief.index as index
     real = index.search

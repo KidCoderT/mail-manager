@@ -1,7 +1,6 @@
 import tempfile
 from pathlib import Path
 
-from mailbrief import rules
 from mailbrief.rules import RulesError, add, effective, empty, load, matches, remove, save, validate
 
 R = validate({
