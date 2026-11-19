@@ -729,7 +729,7 @@ def _confirm(yes: bool, question: str = "Go ahead?") -> bool:
         return True
     try:
         answer = input(f"{question} [y/N] ") if sys.stdin.isatty() else ""
-    except EOFError:  # no keyboard (piped, scheduled): never assume yes
+    except (EOFError, KeyboardInterrupt):  # no keyboard (piped, scheduled), or Ctrl+C: never assume yes
         answer = ""
     if answer.strip().lower() != "y":
         print("\nNothing changed (answer y, or add --yes).")
@@ -1125,6 +1125,9 @@ def main() -> None:
         _main()
     except ConfigError as e:  # a missing key: one line and exit 1, not a traceback
         sys.exit(str(e))
+    except KeyboardInterrupt:  # Ctrl+C anywhere (a prompt, a backfill): a word, not a traceback
+        print("\nStopped.", file=sys.stderr)
+        sys.exit(130)
 
 
 def _main() -> None:
