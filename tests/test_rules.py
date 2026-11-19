@@ -7,7 +7,7 @@ from mailbrief.rules import RulesError, add, effective, empty, load, matches, re
 R = validate({
     "profile": "Year 2 CS student looking for internships and hackathons",
     "courses": ["cs1101s", {"code": "MA1521", "priority": 2}],
-    "senders": [{"match": "tan@nus.edu.sg", "label": "Prof Tan", "direct_only": True, "priority": 1},
+    "senders": [{"match": "tan@example.edu", "label": "Prof Tan", "direct_only": True, "priority": 1},
                 {"match": "career", "label": "Careers", "boost": True}],
     "topics": [{"name": "Networking", "description": "career fairs, meetups, hackathons", "priority": 2}],
 })
@@ -52,9 +52,9 @@ def test_courses():
 
 def test_senders_and_direct():
     labels = lambda e: [m[0] for m in matches(e, R)]
-    assert labels(mail(sender_email="TAN@nus.edu.sg", direct=True)) == ["MB: Prof Tan"]
-    assert labels(mail(sender_email="tan@nus.edu.sg", direct=False)) == []  # class announcement, not private
-    assert labels(mail(sender_name="NUS Career Centre")) == ["MB: Careers"]  # name substring
+    assert labels(mail(sender_email="TAN@example.edu", direct=True)) == ["MB: Prof Tan"]
+    assert labels(mail(sender_email="tan@example.edu", direct=False)) == []  # class announcement, not private
+    assert labels(mail(sender_name="Campus Career Centre")) == ["MB: Careers"]  # name substring
 
 
 def test_topics_boost_and_priority():
@@ -69,7 +69,7 @@ def test_topics_boost_and_priority():
     assert effective(gone_topic, R)["labels"] == []
     careers = effective(mail(sender_name="Career Fair"), R)  # rule boost without a floor → at least P2
     assert careers["boosted"] and careers["priority"] == 2
-    prof = effective(mail(sender_email="tan@nus.edu.sg", direct=True), R)
+    prof = effective(mail(sender_email="tan@example.edu", direct=True), R)
     assert prof["priority"] == 1 and not prof["boosted"]
     assert effective(mail(), R) == {"labels": [], "priority": 4, "boosted": False}
 

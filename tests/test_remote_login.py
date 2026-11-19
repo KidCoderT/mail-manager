@@ -95,7 +95,7 @@ def test_input_checks():
     try:
         cookie = bound(s, win)
         assert "Secure" not in call(s, "GET", "/login")[1].get("Set-Cookie", "")
-        good = [{"type": "click", "x": 10, "y": 20}, {"type": "text", "text": "me@u.nus.edu"}, {"type": "key", "key": "Enter"}]
+        good = [{"type": "click", "x": 10, "y": 20}, {"type": "text", "text": "me@example.edu"}, {"type": "key", "key": "Enter"}]
         for ev in good:
             assert call(s, "POST", "/input", ev, cookie=cookie)[0] == 204
         bad = [{"type": "click", "x": rl.VIEW_W, "y": 0}, {"type": "click", "x": -1, "y": 0}, {"type": "click", "x": True, "y": 0},

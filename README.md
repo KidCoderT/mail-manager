@@ -270,7 +270,7 @@ Every email gets one of six fixed categories plus a priority. M6a adds **labels 
 
 ```
 Prof Tan     Re: your project proposal        [MB: Needs Reply] [MB: P1] [MB: Prof Tan] [MB: CS2103T]
-NUS Hackers  Hack&Roll 2027 sign-ups open     [MB: FYI] [MB: P2] [MB: Networking]
+Hack Club    Campus HackDay 2027 sign-ups open     [MB: FYI] [MB: P2] [MB: Networking]
 Canvas       CS1101S: Mission 7 released      [MB: FYI] [MB: P3] [MB: CS1101S]
 ```
 
@@ -285,7 +285,7 @@ Canvas       CS1101S: Mission 7 released      [MB: FYI] [MB: P3] [MB: CS1101S]
 |---|---|---|---|
 | `profile` | "Year 2 CS student. Looking for internships, hackathons, tech talks and people to network with." | AI | Shapes priorities and the digest. Mail matching your interests ranks higher. |
 | `courses` | `CS1101S`, `MA1521`, `CS2040S` | **Code**: the code appears in the subject, body or sender (Canvas, Ed, course mailing lists) | `MB: CS1101S` |
-| `senders` | `tan@nus.edu.sg` → "Prof Tan", direct only, priority at least 2 | **Code**: address or name match. *Direct only* means you're the only To recipient: private mail, not a class announcement. | `MB: Prof Tan`, and its priority raised to at least P2 |
+| `senders` | `tan@example.edu` → "Prof Tan", direct only, priority at least 2 | **Code**: address or name match. *Direct only* means you're the only To recipient: private mail, not a class announcement. | `MB: Prof Tan`, and its priority raised to at least P2 |
 | `topics` | **Networking:** "career fairs, meetups, recruiter outreach, hackathons, tech talks, alumni events", priority at least 2 | AI: the classifier gets your topic descriptions and tags each email with the ones that fit | `MB: Networking` |
 
 - **Code where code can decide.** Course codes and senders are exact, so no AI is involved: they're free, instant and never wrong about a match.
@@ -306,7 +306,7 @@ Canvas       CS1101S: Mission 7 released      [MB: FYI] [MB: P3] [MB: CS1101S]
 ```
 /rules                                               list your rules
 /rule add course CS2040S
-/rule add sender tan@nus.edu.sg "Prof Tan" direct
+/rule add sender tan@example.edu "Prof Tan" direct
 /rule add topic Networking "career fairs, meetups, hackathons, tech talks"
 /rule remove course MA1521                          (semester's over)
 /profile Year 2 CS student looking for internships and hackathons
@@ -329,7 +329,7 @@ MailBrief:  • You may bring "ONE A4 double-sided cheat sheet, handwritten or p
             • "Calculators are not allowed" ↗
             Sources
             17 Oct · CS1101S Teaching Team · CS1101S Midterm logistics      ← tap: opens it in Outlook
-            23 Oct · Prof Low Wei Ming · Re: cheat sheet question
+            23 Oct · Prof Tan (example) · Re: cheat sheet question
             [📎 Midterm_seating.pdf]                                         ← tap: the file is sent here
 ```
 
@@ -448,7 +448,7 @@ Before M6b, a newsletter announcing five events became "newsletter with upcoming
      sign up by Thu 22 Oct · https://…
 
   SUN 25 OCT
-  • 10am · Hack&Roll info session · Zoom
+  • 10am · HackDay info session · Zoom
      Team formation and prize tracks
 
   DATE NOT GIVEN

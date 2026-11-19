@@ -193,7 +193,7 @@ Every phase announces itself on **stderr**, so it never mixes into `--json` outp
 ### Output (default)
 ```
 9 inbox emails (since 2026-10-15 15:55), 9 need the AI, 0 already saved; inbox: 344 of 344 conversations; 2 of your replies / other-folder messages.
-  [Urgent/p2] 15 Oct 23:07  OSA Hostel Admission Services — Reminder: AY2627 Sem 2 Acceptance Fee
+  [Urgent/p2] 15 Oct 23:07  Housing Office — Reminder: semester 2 acceptance fee due Friday
   ...
 📬 9 new emails — Newsletter 2 · Low Priority 2 · FYI 2 · ...
 TOP PRIORITIES TODAY
@@ -345,8 +345,8 @@ Shows **this week's** emails (since Monday), **grouped by thread**:
 - other-folder copies are tagged `[elsewhere]`, your sent messages `[sent]`.
 
 ```
-   1  22 Sep 14:10  [Needs Reply/p3]     Amirhassan Monajemi — I need a student to help me with setting up a robot   ✓ replied
-   2  22 Sep 14:37  [sent]                  ↳ You — Fw: I need a student to help me with setting up a robot
+   1  22 Sep 14:10  [Needs Reply/p3]     Dr Imani Okafor — Looking for a student to help set up a lab demo   ✓ replied
+   2  22 Sep 14:37  [sent]                  ↳ You — Re: Looking for a student to help set up a lab demo
 
 2 shown. ── this week 56 · this month 148 · last month 205 · older 3 ──  (--period NAME, --show N, --thread N)
 ```
@@ -416,7 +416,7 @@ MailBrief puts its classification **on the emails in Outlook**, as Outlook *cate
 
 ```
 Prof Tan   Submit form by Fri    [MB: Urgent] [MB: P1]
-NUS News   Weekly roundup        [MB: Newsletter] [MB: P5]
+Campus News  Weekly roundup       [MB: Newsletter] [MB: P5]
 Ana        Lunch tomorrow?       [MB: Needs Reply] [MB: P2]
 ```
 Each inbox email gets **two labels**: its category and its priority.
@@ -534,7 +534,7 @@ uv run mailbrief rules list                                           # your rul
 uv run mailbrief rules profile "Year 2 CS student looking for internships, hackathons and networking"
 uv run mailbrief rules add course CS1101S                             # → MB: CS1101S
 uv run mailbrief rules add course CS2103T --priority 2                # …and at least P2
-uv run mailbrief rules add sender tan@nus.edu.sg --label "Prof Tan" --direct --priority 1
+uv run mailbrief rules add sender tan@example.edu --label "Prof Tan" --direct --priority 1
 uv run mailbrief rules add sender "Career Centre" --label Careers --boost
 uv run mailbrief rules add topic Networking "career fairs, meetups, recruiter outreach, hackathons, tech talks" --priority 2
 uv run mailbrief rules remove course MA1521                           # old emails keep MB: MA1521 (labels clear --label removes it)

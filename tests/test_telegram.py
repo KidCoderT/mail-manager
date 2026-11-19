@@ -77,7 +77,7 @@ def test_heading_detection():
     for h in ("NOISE", "KEY EVENTS", "DEADLINES & MEETINGS (with dates; say \"passed\")", "FYI (one line each, only the useful ones)",
               "TOP PRIORITIES TODAY:", "STILL OPEN"):
         assert is_heading(h), h
-    for not_h in ("• NOISE item", "NUS AI Institute", "Dear students,", "OK", "📬 3 new emails — FYI 3", "- KEY EVENTS", ""):
+    for not_h in ("• NOISE item", "Campus AI Institute", "Dear students,", "OK", "📬 3 new emails — FYI 3", "- KEY EVENTS", ""):
         assert not is_heading(not_h), not_h
 
 

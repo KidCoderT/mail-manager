@@ -137,11 +137,11 @@ def test_master_categories_from_startup():
 
 
 def test_your_own_labels():
-    r = rules.validate({"courses": ["CS1101S"], "senders": [{"match": "tan@nus.edu.sg", "label": "Prof Tan", "priority": 1}],
+    r = rules.validate({"courses": ["CS1101S"], "senders": [{"match": "tan@example.edu", "label": "Prof Tan", "priority": 1}],
                         "topics": [{"name": "Networking", "description": "meetups"}]})
     course = email(1, "FYI", 4, subject="CS1101S: Mission 7")
     assert labels_for(course, r) == ["MB: FYI", "MB: P4", "MB: CS1101S"]
-    prof = email(2, "Needs Reply", 3, sender_email="tan@nus.edu.sg")
+    prof = email(2, "Needs Reply", 3, sender_email="tan@example.edu")
     assert labels_for(prof, r) == ["MB: Needs Reply", "MB: P1", "MB: Prof Tan"]  # priority floor raises MB: P<n>
     # A retired rule's label stays as history; one whose rule still exists but no longer matches goes.
     old = email(3, "FYI", 4, subject="hello", outlook_labels=["MB: FYI", "MB: P4", "MB: MA1521", "MB: CS1101S"])

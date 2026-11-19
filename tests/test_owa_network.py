@@ -94,7 +94,7 @@ GETITEM = {
                             "IsRead": False,
                             "HasAttachments": True,
                             "Attachments": [{"Name": "q3.xlsx", "Size": 10, "AttachmentId": {"Id": "a"}}],
-                            "ToRecipients": [{"Name": "Me", "EmailAddress": "Me@U.NUS.edu"}],
+                            "ToRecipients": [{"Name": "Me", "EmailAddress": "Me@Example.EDU"}],
                             "CcRecipients": [{"Mailbox": {"Name": "Bob", "EmailAddress": "bob@x.com"}}, {"Name": "no address"}],
                         }
                     ],
@@ -110,9 +110,9 @@ def test_global_ids_and_user_email():
     conv = dict(CONVERSATIONS["Body"]["Conversations"][0], GlobalItemIds=[{"Id": "i-a"}, {"Id": "i-b"}, {"Id": "sent-1"}])
     [c] = [m for m in parse_messages([{"Conversations": [conv]}]) if m["id"] == "c1"]
     assert c["item_ids"] == ["i-a", "i-b"] and c["global_item_ids"] == ["i-a", "i-b", "sent-1"]
-    startup = {"owaUserConfig": {"SessionSettings": {"UserEmailAddress": "me@u.nus.edu", "LogonEmailAddress": "x"}},
+    startup = {"owaUserConfig": {"SessionSettings": {"UserEmailAddress": "me@example.edu", "LogonEmailAddress": "x"}},
                "findConversation": CONVERSATIONS}
-    assert find_user_email([{"other": 1}, startup]) == "me@u.nus.edu"
+    assert find_user_email([{"other": 1}, startup]) == "me@example.edu"
     assert find_user_email([CONVERSATIONS]) is None
 
 
@@ -159,7 +159,7 @@ def test_parse_items():
     assert r["attachment_names"] == ["q3.xlsx"] and r["importance"] == "High" and r["is_read"] is False
     assert r["received_at"].isoformat() == "2026-10-16T00:12:33+00:00" and r["body_source"] == "getitem"
     assert (r["conversation_index"], r["in_reply_to"], r["internet_message_id"]) == ("AQHcPd4R", "<orig@x.com>", "<this@x.com>")
-    assert r["to"] == ["me@u.nus.edu"] and r["cc"] == ["bob@x.com"]  # bare or "Mailbox"-wrapped, lowercased
+    assert r["to"] == ["me@example.edu"] and r["cc"] == ["bob@x.com"]  # bare or "Mailbox"-wrapped, lowercased
     assert parse_items({"unexpected": 1}) == []
 
 
