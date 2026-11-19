@@ -15,6 +15,11 @@ def test_allowed_only_public_https():
                     "::1", "fe80::1%eth0", "fc00::1", "0.0.0.0", "224.0.0.1"):
         assert not allowed("https://evil.example.com/a.png", lambda h, ip=private: [ip]), private
     assert not allowed("https://mixed.example.com/a.png", lambda h: ["93.184.216.34", "10.0.0.1"])  # any private → no
+    # IPv6 forms that carry an IPv4 address inside: judged by that address.
+    for hidden in ("64:ff9b::7f00:1", "::127.0.0.1", "::ffff:10.0.0.5", "2002:c0a8:101::1", "64:ff9b::a00:1"):
+        assert not allowed("https://evil.example.com/a.png", lambda h, ip=hidden: [ip]), hidden
+    for fine in ("2606:4700:4700::1111", "64:ff9b::5db8:d822", "::ffff:93.184.216.34"):
+        assert allowed("https://cdn.example.com/a.png", lambda h, ip=fine: [ip]), fine
 
     def broken(host):
         raise OSError("no such host")

@@ -40,11 +40,23 @@ def allowed(url: str, resolve=_resolve) -> bool:
         addresses = resolve(parts.hostname)
     except (OSError, UnicodeError):
         return False
-    for a in addresses:
-        ip = ipaddress.ip_address(a.split("%")[0])
-        if not ip.is_global or ip.is_multicast:  # private, loopback, link-local, reserved, CGNAT…
-            return False
-    return bool(addresses)
+    return bool(addresses) and all(_public(a) for a in addresses)
+
+
+_NAT64 = ipaddress.ip_network("64:ff9b::/96")
+
+
+def _public(address: str) -> bool:
+    """A public internet address: not private, loopback, link-local, reserved, CGNAT or multicast, and not an
+    IPv6 form that carries one of those IPv4 addresses inside it (which is_global alone lets through)."""
+    ip = ipaddress.ip_address(address.split("%")[0])
+    if ip.version == 6:
+        inner = ip.ipv4_mapped or ip.sixtofour  # ::ffff:a.b.c.d, 2002:AABB:CCDD::
+        if inner is None and (ip in _NAT64 or int(ip) >> 32 == 0):  # 64:ff9b::a.b.c.d (NAT64), ::a.b.c.d
+            inner = ipaddress.ip_address(int(ip) & 0xFFFFFFFF)
+        if inner is not None:
+            return inner.is_global and not inner.is_multicast
+    return ip.is_global and not ip.is_multicast
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
