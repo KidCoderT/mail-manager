@@ -101,7 +101,7 @@ def validate(data: dict | None, topics: tuple[str, ...] = (), received: date | N
         "priority": priority if isinstance(priority, int) and 1 <= priority <= 5 else 3,
         "one_line_summary": str(data.get("one_line_summary") or "").strip(),
         "action_items": [str(a) for a in data.get("action_items") or [] if a],
-        "deadline": deadline if isinstance(deadline, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", deadline) else None,
+        "deadline": _date(deadline, received),  # a real calendar date: "2026-02-30" would crash every date lookup later
         # Only topics from your list survive, spelled as you wrote them.
         "tags": list(dict.fromkeys(names[t.lower()] for t in tags if isinstance(t, str) and t.lower() in names)),
         "boost": data.get("boost") is True,

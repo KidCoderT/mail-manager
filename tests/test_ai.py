@@ -21,6 +21,13 @@ def test_validate():
     assert loose["priority"] == 3 and loose["deadline"] is None and loose["action_items"] == []
 
 
+def test_deadline_must_be_a_real_day():
+    ok = {"category": "FYI", "deadline": "2026-03-02"}
+    assert validate(ok, received=date(2026, 3, 1))["deadline"] == "2026-03-02"
+    assert validate({**ok, "deadline": "2026-02-30"}, received=date(2026, 2, 1))["deadline"] is None
+    assert validate({**ok, "deadline": "soon"})["deadline"] is None
+
+
 def test_trim_body():
     reply = "Sounds good, see you then.\n\nOn Tue, 14 Oct 2026 at 10:00, Ana <ana@x.com> wrote:\n> old stuff"
     assert trim_body(reply) == "Sounds good, see you then."

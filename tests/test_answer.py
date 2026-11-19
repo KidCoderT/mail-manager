@@ -24,6 +24,11 @@ def test_validate_plan():
     assert validate_plan({"after": "next week", "events": "yes", "labels": "x"}, "q")["after"] is None
 
 
+def test_impossible_dates_never_raise():
+    assert answer._day("2026-02-30") is None and answer._day("2026-03-02") == date(2026, 3, 2)
+    assert not answer._in_range("2026-02-30", date(2026, 1, 1), date(2026, 12, 31))
+
+
 def test_parse_reply():
     sources = [src(1, ["seating.pdf"]), src(2, ["notes.docx"]), src(3)]
     out = parse_reply('It is on 7 Nov [1] at MPSH [1][2]. Ignore [9].\nSEND: [1] Seating.pdf\nSEND: [2] evil.exe\n'

@@ -65,7 +65,10 @@ def _history(history: list[tuple[str, str]]) -> str:
 
 
 def _day(value) -> date | None:
-    return date.fromisoformat(value) if isinstance(value, str) and _DATE.fullmatch(value) else None
+    try:
+        return date.fromisoformat(value) if isinstance(value, str) and _DATE.fullmatch(value) else None
+    except ValueError:  # the right shape but not a day ("2026-02-30"), from the model or an older archive
+        return None
 
 
 def _in_range(value, start: date, end: date) -> bool:
