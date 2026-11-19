@@ -100,20 +100,29 @@ def parse_input(body: bytes) -> dict | None:
     return None
 
 
-PAGE = """<!doctype html><html><head><meta charset="utf-8">
+PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark">
 <title>MailBrief sign-in</title>
 <style nonce="{n}">body{{font:16px system-ui,sans-serif;margin:0 auto;padding:12px;max-width:520px;background:#fff;color:#111}}
 @media (prefers-color-scheme:dark){{body{{background:#121212;color:#eee}}img{{border-color:#555}}}}
-img{{width:100%;border:1px solid #999;touch-action:manipulation}}button{{font-size:16px;padding:8px 12px;margin:4px 2px}}
+img{{width:100%;border:1px solid #999;touch-action:manipulation}}h1{{font-size:20px}}.why{{font-size:14px;opacity:.8}}
+button{{font-size:16px;padding:8px 14px;margin:4px 8px 4px 0;min-height:44px;min-width:44px}}
 input[type=text],input[type=password]{{font-size:16px;width:60%;padding:8px}}#msg{{margin:12px 0}}</style></head><body>
-<h3>MailBrief: sign in to Outlook</h3><p id="msg"></p>
+<h1>MailBrief: sign in to Outlook</h1>
+<p class="why">This page shows a live picture of a browser on the machine your MailBrief runs on. What you type here
+is typed there, into Microsoft's own sign-in page. It closes after {mins} minutes, or as soon as you're signed in.</p>
+<noscript><p>This page needs JavaScript to show the sign-in browser.</p></noscript>
+<p id="msg" role="status" aria-live="polite"></p>
 <div id="start" hidden><button id="go">Start</button></div>
 <div id="screen" hidden>
-<form id="f"><input id="box" type="password" autocomplete="off" autocapitalize="off" placeholder="type here, then Send">
+<form id="f"><input id="box" type="password" autocomplete="off" autocapitalize="off" placeholder="type here, then Send"
+ aria-label="Text to type into the sign-in page">
 <button>Send</button></form><label><input id="show" type="checkbox"> show what I type</label><br>
-<button data-key="Enter">Enter</button><button data-key="Tab">Tab</button><button data-key="Backspace">⌫</button>
-<p>Tap the picture to click. It refreshes every half second.</p><img id="shot" alt="the sign-in browser"></div>
+<button data-key="Enter">Enter</button><button data-key="Tab">Tab</button>
+<button data-key="Backspace" aria-label="Backspace" title="Backspace">⌫</button>
+<p>Tap the picture to click. It refreshes every half second. (A screen reader can't read the picture: if you rely
+on one, sign in with <code>mailbrief login</code> on the machine itself.)</p>
+<img id="shot" alt="Live picture of the Microsoft sign-in page in MailBrief's browser"></div>
 <script nonce="{n}">
 const tok = location.hash.slice(1); history.replaceState(null, '', location.pathname);
 const $ = id => document.getElementById(id), msg = t => $('msg').textContent = t;
