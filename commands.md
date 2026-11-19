@@ -793,7 +793,7 @@ Render differs from Railway in two ways that matter:
 
 **If the logs show "Permission denied" under `/app/data`:** the disk is owned by root while the container runs as user 1000. Tell me; the fix is a small Dockerfile change.
 
-Any other host that insists on an open port: set `LOGIN_PAGE=always`.
+Any other host that insists on an open port: set `LOGIN_PAGE=always`. The port is opened to the network only when the page's address (`PUBLIC_URL`, or the host's own) is `https://`; with no `PUBLIC_URL` it listens on `127.0.0.1` only, because plain http would send your password unencrypted.
 
 **If NUS blocks sign-ins from datacenter addresses,** the Microsoft page says so during sign-in. Then use the copy-`session.enc` route, or a home server.
 

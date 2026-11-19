@@ -258,6 +258,16 @@ def test_render_address_and_switch():
         os.environ.pop("RENDER")
         os.environ["LOGIN_PAGE"] = "always"
         assert rl.always_on()
+        # https in front (Render, a proxy): every interface. Plain http://localhost: this machine only.
+        assert rl.always_bind() == "0.0.0.0"
+        os.environ.pop("RENDER_EXTERNAL_URL")
+        assert rl.public_url().startswith("http://localhost") and rl.always_bind() == "127.0.0.1"
+        os.environ["PUBLIC_URL"] = "http://mail.example.com"
+        try:
+            rl.always_bind()
+            raise AssertionError("a plain-http public address must be refused")
+        except ValueError:
+            pass
     finally:
         for k, v in old.items():
             os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)

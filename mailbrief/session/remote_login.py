@@ -270,13 +270,19 @@ def always_on() -> bool:
     return os.environ.get("RENDER", "").lower() == "true" or os.environ.get("LOGIN_PAGE", "").lower() == "always"
 
 
+def always_bind() -> str:
+    """Where the always-on server listens: every interface only when the page's address is https (a proxy or
+    the host's own TLS in front). With no PUBLIC_URL the page is plain http://localhost, so this machine only:
+    on 0.0.0.0 your password would cross the network unencrypted. Refuses a plain-http public address."""
+    return "127.0.0.1" if is_local(public_url()) else "0.0.0.0"
+
+
 def start_always() -> int | None:
     """Called by `serve`: open $PORT for good if this host needs it. Returns the port, or None."""
     global _always
     if not always_on() or _always is not None:
         return None
-    is_local(public_url())  # refuse a plain-http public address here too
-    _always = Server(("0.0.0.0", port()), handler(lambda: _active))
+    _always = Server((always_bind(), port()), handler(lambda: _active))
     threading.Thread(target=_always.serve_forever, name="mailbrief-web", daemon=True).start()
     return port()
 
