@@ -115,13 +115,15 @@ input[type=text],input[type=password]{{font-size:16px;width:60%;padding:8px}}#ms
 <script nonce="{n}">
 const tok = location.hash.slice(1); history.replaceState(null, '', location.pathname);
 const $ = id => document.getElementById(id), msg = t => $('msg').textContent = t;
+const READY = 'Sign in as usual. Tick "Stay signed in".'; let seen = false;
 const AGAIN = ' Start a new sign-in: send /login to your bot in Telegram, or run "mailbrief login --remote".';
 const ENDS = {{done: 'Signed in ✅ You can close this page.',
   expired: 'This sign-in ran out of time ({mins} minutes).' + AGAIN,
   failed: 'You signed in, but Outlook did not keep the sign-in. Tick "Stay signed in" next time.' + AGAIN,
   closed: 'This sign-in page has closed.' + AGAIN}};
 const post = (path, o) => fetch(path, {{method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify(o)}});
-function screen() {{ $('start').hidden = true; $('screen').hidden = false; msg('Sign in as usual. Tick "Stay signed in".'); tick(); }}
+function screen() {{ $('start').hidden = true; $('screen').hidden = false; $('shot').hidden = !seen;
+  msg(seen ? READY : 'Loading the Microsoft sign-in page…'); tick(); }}
 async function tick() {{
   const s = await fetch('/status').then(r => r.ok ? r.json() : {{state: 'closed'}}).catch(() => ({{state: 'closed'}}));
   if (s.state === 'hidden') {{ $('screen').hidden = true;
@@ -130,7 +132,8 @@ async function tick() {{
   if (s.state !== 'open') {{ $('screen').hidden = true; return msg(ENDS[s.state] || ENDS.closed); }}
   $('shot').src = '/frame?' + Date.now();
 }}
-$('shot').onload = () => setTimeout(tick, 500); $('shot').onerror = () => setTimeout(tick, 1000);
+$('shot').onload = () => {{ if (!seen) {{ seen = true; $('shot').hidden = false; msg(READY); }} setTimeout(tick, 500); }};
+$('shot').onerror = () => setTimeout(tick, 1000);  // no picture yet: keep "Loading…", not a broken-image icon
 $('shot').onclick = e => {{ const r = $('shot').getBoundingClientRect();  // shown smaller on a phone: scale to the real size
   post('/input', {{type: 'click', x: Math.round((e.clientX - r.left) * $('shot').naturalWidth / r.width),
                    y: Math.round((e.clientY - r.top) * $('shot').naturalHeight / r.height)}}); }};
