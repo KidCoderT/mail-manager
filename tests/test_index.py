@@ -80,6 +80,18 @@ def test_update_never_raises():
         assert index.update([mail(1, "x", "y")], embed=broken, path=Path(d) / "i.enc") == (0, 0)
 
 
+def test_damaged_index_is_rebuilt_and_search_still_answers():
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "i.enc"
+        path.write_bytes(b"not an index")  # a damaged file, or one saved with another key
+        emails = [mail(1, "Midterm venue", "the midterm is in LT27"), mail(2, "Pizza", "free pizza on Friday")]
+        assert index.search(emails, {"search": "midterm"}, embed=fake_embed, path=path)[0]["id"] == "e1"  # keywords only
+        assert index.update(emails, embed=fake_embed, path=path, rebuild=True) == (2, 0)
+        assert index.status(path)["emails"] == 2
+        path.write_bytes(b"damaged again")
+        assert index.update(emails, embed=fake_embed, path=path) == (2, 0)  # a plain update recovers too
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

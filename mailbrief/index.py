@@ -122,9 +122,15 @@ def update(emails: list[dict], log=None, embed=None, path: Path | None = None, r
     try:
         if embed is None:
             from mailbrief.ai.client import embed
-        data = load(path)
-        if rebuild or data.get("model") != _model():
-            data = {"model": _model(), "updated": None, "items": {}}
+        fresh = {"model": _model(), "updated": None, "items": {}}
+        try:  # derived data: an index that won't open (key changed, file damaged) is rebuilt, not fatal
+            data = fresh if rebuild else load(path)
+        except Exception as e:  # noqa: BLE001
+            if log:
+                print(f"warning: the search index couldn't be read ({type(e).__name__}); rebuilding it", file=log)
+            data = fresh
+        if data.get("model") != _model():
+            data = fresh
         keep = {e["id"]: e for e in emails if indexable(e)}
         todo = []
         for i, e in keep.items():
@@ -218,7 +224,10 @@ def search(emails: list[dict], plan: dict, k: int = 12, your_rules: dict | None 
     if not filtered:
         return []
     query = plan.get("search") or ""
-    items = load(path)["items"]
+    try:
+        items = load(path)["items"]
+    except Exception:  # noqa: BLE001 - an unreadable index: keywords still find things until it's rebuilt
+        items = {}
     meaning = {}
     if query and any(e["id"] in items for e in filtered):
         if embed is None:
