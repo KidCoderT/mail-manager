@@ -1,18 +1,133 @@
-# MailBrief — AI Morning Email Digest (Outlook)
+# MailBrief
 
-> **Status:** v1 works end to end (M1–M5 ✅: reading, AI classification and digests, Outlook labels, scheduled service), plus **your own labels** (M6a ✅, §3.8) and **newsletter images & an UPCOMING EVENTS calendar** (M6b ✅, §3.10) and **chatting with your inbox in Telegram**, with a ↗ link to the Outlook email on every digest line, event and answer (M7 ✅, §3.9).
-> **Scope:** one person's Outlook on the web (Microsoft 365), Playwright driving a **local Chromium**, Telegram delivery (more channels pluggable). [Browserless](https://www.browserless.io) is an optional later runtime. **Single-user only:** multi-user hosting is cancelled (§13).
+**A self-hosted morning digest and inbox chat for Outlook on the web (Microsoft 365).** It reads your new mail on your own machine, has an AI model you choose sort and summarise it, labels the emails inside Outlook, and sends the digest to your Telegram, where you can also ask questions about your email.
 
-> ⚠️ **Disclaimer:**
+[![CI](https://github.com/KidCoderT/mail-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/KidCoderT/mail-manager/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)
+
+**Website:** <https://kidcodert.github.io/mail-manager/> · **Docs:** [commands.md](commands.md) (every command) · [teaching.md](teaching.md) (how and why the code works) · [CHANGELOG.md](CHANGELOG.md)
+
+- **What it does:** a digest of new mail every morning, an UPCOMING EVENTS calendar, `MB:` categories on the emails in Outlook, your own labels (courses, senders, topics), and answers to questions like "when is the CS1101S midterm?" with quotes, sources and attachments.
+- **What it never does:** delete, move, send, reply, or mark anything as read. The only thing it changes in your mailbox is its own `MB:` categories, and code refuses every other kind of write.
+- **Where your data goes:** the browser, the encrypted archive and the search index stay on your machine. Email text goes to the AI endpoint you configure. The digest, and whatever you ask for in chat, goes to Telegram.
+
+> ⚠️ **Read this first**
 > - MailBrief is a personal project. It is not affiliated with or endorsed by Microsoft, Telegram, or any university or employer.
-> - It uses Outlook on the web's **internal** API, not a public one, so it can break without warning.
+> - It uses Outlook on the web's **internal** interface, not a public API, so it can break without warning or be blocked.
 > - Use it only on **your own** mailbox. Automated access may be against your organisation's IT acceptable-use policy or Microsoft's terms: check first. You are responsible for how you use it.
-> - Email text is sent to whichever AI endpoint you configure.
-> - It comes with no warranty ([MIT License](LICENSE)).
+> - Email text is sent to whichever AI endpoint you configure. What that endpoint keeps is its operator's policy.
+> - It is for one person on their own machine or server. There is no hosted version. No warranty ([MIT License](LICENSE)).
 
-> 📘 **Docs:** [commands.md](commands.md) (every command in detail) · [teaching.md](teaching.md) (how and why the code works)
+## What you get
 
-MailBrief reads your work inbox every morning with a headless browser on your own machine. It labels the emails inside Outlook (categories, **never deletes**) and sends a summary to one or more destinations, starting with Telegram. It also labels mail by your own rules (courses, professors, networking), keeps a calendar of the events your emails announce, and answers questions about your email in a Telegram chat. Every line it sends links to the email in Outlook.
+A morning message like this (made-up mail), where every line links to its email in Outlook:
+
+```
+📬 9 new emails — FYI 4 · Newsletter 2 · Needs Reply 2 · Urgent 1
+
+TOP PRIORITIES TODAY
+• Housing: the semester 2 acceptance fee is due Friday  ↗ open
+
+NEEDS A REPLY
+• Dr Okafor asks whether you can help set up the lab demo on Thursday  ↗ open
+
+DEADLINES & MEETINGS
+• CS2040S problem set 4 is due Sun 23:59  ↗ open
+
+OPPORTUNITIES & EVENTS
+• ⭐ Campus HackDay sign-ups close on the 30th  ↗ open
+```
+
+Then, in the same chat:
+
+```
+You:        when is the CS1101S midterm, and what can I bring?
+MailBrief:  • It is on "Saturday 7 Nov, 10:00, MPSH 2"  ↗ open
+            • You may bring "ONE A4 double-sided cheat sheet"  ↗ open
+            Sources
+            17 Oct · CS1101S Teaching Team · CS1101S Midterm logistics
+            [📎 Midterm_seating.pdf]
+```
+
+## Requirements
+
+- A **Microsoft 365** work or school account you read in Outlook on the web (`outlook.office.com`). Personal Outlook.com accounts are not supported.
+- An **OpenAI-compatible AI endpoint** with a chat model, a model that accepts images, and an embedding model: one your organisation runs, or a local server such as Ollama. There is no default: you choose where your email text goes.
+- A **Telegram bot** of your own (free, from @BotFather).
+- **Python 3.11** and [uv](https://docs.astral.sh/uv/), on Windows, Linux or macOS. Or Docker, for an always-on server.
+
+## Quick start
+
+```
+git clone https://github.com/KidCoderT/mail-manager.git
+cd mail-manager
+uv sync
+uv run playwright install chromium --no-shell
+```
+
+Create `.env` from the example and fill in four things:
+
+```
+cp .env.example .env        # Windows: copy .env.example .env
+uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+| In `.env` | What |
+|---|---|
+| `SESSION_ENCRYPTION_KEY` | the key the command above printed. Keep it: it decrypts your saved session and archive |
+| `AI_BASE_URL`, `AI_API_KEY` | your endpoint and its key, e.g. `http://localhost:11434/v1` |
+| `AI_CLASSIFIER_MODEL`, `AI_DIGEST_MODEL`, `AI_VISION_MODEL`, `AI_ANSWER_MODEL`, `AI_EMBED_MODEL` | model names as your endpoint lists them |
+| `TELEGRAM_BOT_TOKEN` | from @BotFather: `/newbot`, then `/setjoingroups` → Disable |
+| `DEFAULT_TIMEZONE` | your timezone, e.g. `Europe/London` |
+
+Then, in this order:
+
+```
+uv run mailbrief login                        # a browser opens: sign in to Outlook, press Enter in the terminal
+#   now send your bot any message in Telegram, so it can find your chat
+uv run mailbrief add-destination telegram     # pick your chat; a test message arrives
+uv run mailbrief run --send --commit          # your first digest (the last 24 hours)
+uv run mailbrief run --backfill               # optional, after the first digest: archive the whole inbox
+uv run mailbrief index rebuild                # optional: makes that archive searchable in chat
+uv run mailbrief serve                        # from now on: a digest at RUN_AT (default 07:30), and the chat
+```
+
+`uv run mailbrief autostart on` starts `serve` hidden at Windows logon. On a server, `docker compose up -d --build` runs the same `serve` ([commands.md §7](commands.md)). `uv run mailbrief --help` lists every command, each with examples.
+
+## Using it
+
+| Where | What |
+|---|---|
+| Telegram | ask anything in plain words · `/sync` check for mail now · `/digest` · `/events` · `/rules`, `/rule add …` · `/login` when the sign-in expires · `/help` |
+| Terminal | `mailbrief emails` browse the archive · `mailbrief events` · `mailbrief chat` · `mailbrief rules add course CS2040S` · `mailbrief labels status` · `mailbrief status` |
+| Outlook | filter by the `MB:` categories (`MB: Urgent`, `MB: P1`, `MB: CS2040S` …) on web, desktop and phone |
+
+## Limits, honestly
+
+- Microsoft 365 accounts on `outlook.office.com` only. It depends on Outlook's internal formats, which change; all of that parsing lives in one file so it can be fixed in one place.
+- Sign-ins expire on your organisation's schedule. MailBrief tells you on Telegram and you sign in again.
+- One user. The model names and timings in the docs are from one setup; other endpoints will behave differently, and the OpenAI API itself is untested.
+- Autostart is Windows-only; on Linux and macOS use Docker or your own service manager.
+
+## Development
+
+```
+uv sync
+uv run pytest -q                       # no browser, network, Outlook account or AI endpoint needed
+uv run ruff check mailbrief tests
+```
+
+Security reports: see [SECURITY.md](SECURITY.md).
+
+---
+
+# Design notes
+
+The rest of this file is the design document the project was built from: goals, architecture, each component, the data model and the roadmap. The section numbers are referenced from `commands.md` and `teaching.md`.
+
+> **Status:** v1 works end to end (M1–M5 ✅: reading, AI classification and digests, Outlook labels, scheduled service), plus **your own labels** (M6a ✅, §3.8), **newsletter images & an UPCOMING EVENTS calendar** (M6b ✅, §3.10) and **chatting with your inbox in Telegram** (M7 ✅, §3.9).
+> **Scope:** one person's Outlook on the web (Microsoft 365), Playwright driving a **local Chromium**, Telegram delivery (more channels pluggable). **Single-user only:** multi-user hosting is cancelled (§13).
 
 ---
 
