@@ -101,8 +101,10 @@ def parse_input(body: bytes) -> dict | None:
 
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>MailBrief sign-in</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark">
+<title>MailBrief sign-in</title>
 <style nonce="{n}">body{{font:16px system-ui,sans-serif;margin:0 auto;padding:12px;max-width:520px;background:#fff;color:#111}}
+@media (prefers-color-scheme:dark){{body{{background:#121212;color:#eee}}img{{border-color:#555}}}}
 img{{width:100%;border:1px solid #999;touch-action:manipulation}}button{{font-size:16px;padding:8px 12px;margin:4px 2px}}
 input[type=text],input[type=password]{{font-size:16px;width:60%;padding:8px}}#msg{{margin:12px 0}}</style></head><body>
 <h3>MailBrief: sign in to Outlook</h3><p id="msg"></p>
