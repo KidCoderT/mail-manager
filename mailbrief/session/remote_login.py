@@ -107,7 +107,8 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 @media (prefers-color-scheme:dark){{body{{background:#121212;color:#eee}}img{{border-color:#555}}}}
 img{{width:100%;border:1px solid #999;touch-action:manipulation}}h1{{font-size:20px}}.why{{font-size:14px;opacity:.8}}
 button{{font-size:16px;padding:8px 14px;margin:4px 8px 4px 0;min-height:44px;min-width:44px}}
-input[type=text],input[type=password]{{font-size:16px;width:60%;padding:8px}}#msg{{margin:12px 0}}</style></head><body>
+input:not([type=checkbox]){{font-size:16px;width:60%;padding:8px;margin:2px 8px 6px 0}}label{{display:block}}
+#msg{{margin:12px 0}}</style></head><body>
 <h1>MailBrief: sign in to Outlook</h1>
 <p class="why">This page shows a live picture of a browser on the machine your MailBrief runs on. What you type here
 is typed there, into Microsoft's own sign-in page. It closes after {mins} minutes, or as soon as you're signed in.</p>
@@ -115,9 +116,14 @@ is typed there, into Microsoft's own sign-in page. It closes after {mins} minute
 <p id="msg" role="status" aria-live="polite"></p>
 <div id="start" hidden><button id="go">Start</button></div>
 <div id="screen" hidden>
-<form id="f"><input id="box" type="password" autocomplete="off" autocapitalize="off" placeholder="type here, then Send"
- aria-label="Text to type into the sign-in page">
-<button>Send</button></form><label><input id="show" type="checkbox"> show what I type</label><br>
+<form id="f">
+<label for="user">Email or username</label><input id="user" type="text" inputmode="email" autocomplete="username"
+ autocapitalize="off" spellcheck="false"><button type="button" data-send="user">Type it</button>
+<label for="pass">Password</label><input id="pass" type="password" autocomplete="current-password">
+<button type="button" data-send="pass">Type it</button>
+<label for="code">A code, or anything else</label><input id="code" type="text" autocomplete="one-time-code"
+ autocapitalize="off" spellcheck="false"><button type="button" data-send="code">Type it</button>
+</form><label><input id="enter" type="checkbox" checked> press Enter after typing</label>
 <button data-key="Enter">Enter</button><button data-key="Tab">Tab</button>
 <button data-key="Backspace" aria-label="Backspace" title="Backspace">⌫</button>
 <p>Tap the picture to click. It refreshes every half second. (A screen reader can't read the picture: if you rely
@@ -148,8 +154,13 @@ $('shot').onerror = () => setTimeout(tick, 1000);  // no picture yet: keep "Load
 $('shot').onclick = e => {{ const r = $('shot').getBoundingClientRect();  // shown smaller on a phone: scale to the real size
   post('/input', {{type: 'click', x: Math.round((e.clientX - r.left) * $('shot').naturalWidth / r.width),
                    y: Math.round((e.clientY - r.top) * $('shot').naturalHeight / r.height)}}); }};
-$('f').onsubmit = e => {{ e.preventDefault(); if ($('box').value) post('/input', {{type: 'text', text: $('box').value}}); $('box').value = ''; }};
-$('show').onchange = () => $('box').type = $('show').checked ? 'text' : 'password';
+// Each field types its text into whatever box is focused in the picture; with "press Enter" on, the phone
+// keyboard's Go key (or "Type it") also moves the sign-in page on, so there is no second button to find.
+const send = async id => {{ const v = $(id).value; if (!v) return; $(id).value = '';
+  await post('/input', {{type: 'text', text: v}}); if ($('enter').checked) post('/input', {{type: 'key', key: 'Enter'}}); }};
+document.querySelectorAll('[data-send]').forEach(b => b.onclick = () => send(b.dataset.send));
+$('f').onsubmit = e => e.preventDefault();
+$('f').querySelectorAll('input').forEach(i => i.onkeydown = e => {{ if (e.key === 'Enter') {{ e.preventDefault(); send(i.id); }} }});
 document.querySelectorAll('[data-key]').forEach(b => b.onclick = () => post('/input', {{type: 'key', key: b.dataset.key}}));
 $('go').onclick = async () => {{ $('go').disabled = true; msg('Starting…');  // one tap only: a second would get "already used"
   const r = await post('/login', {{token: tok}}).catch(() => ({{ok: false}}));
