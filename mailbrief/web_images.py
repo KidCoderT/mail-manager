@@ -9,6 +9,7 @@ import base64
 import ipaddress
 import os
 import socket
+import time
 import urllib.error
 import urllib.request
 from urllib.parse import urlparse
@@ -17,7 +18,8 @@ from mailbrief.browser.owa_network import IMAGE_MAX, IMAGE_MIN
 
 TYPES = ("image/png", "image/jpeg", "image/webp", "image/gif")
 TRIES = 12      # URLs tried per email at most
-TIMEOUT_S = 10
+TIMEOUT_S = 10  # per connect and per read: a server that goes quiet
+TOTAL_S = 20    # per image, start to finish: a server that drips a few bytes just inside every read timeout
 
 
 def enabled() -> bool:
@@ -53,11 +55,26 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 _opener = urllib.request.build_opener(_NoRedirect)
 
 
+def _read(stream, limit: int, total_s: float = TOTAL_S, clock=time.monotonic) -> bytes:
+    """Up to `limit` bytes, giving up (TimeoutError) once the whole download has taken total_s. The socket
+    timeout alone only bounds each read, so a slow drip could hold a run, and the run lock, for days."""
+    deadline, data = clock() + total_s, b""
+    read = getattr(stream, "read1", None) or stream.read  # read1: whatever has arrived, not "block until 64 KB have"
+    while len(data) < limit:
+        if clock() > deadline:
+            raise TimeoutError("image download took too long")
+        chunk = read(min(65536, limit - len(data)))
+        if not chunk:
+            break
+        data += chunk
+    return data
+
+
 def _fetch(url: str) -> tuple[str, bytes]:
     """(content type, up to IMAGE_MAX + 1 bytes). Raises on any HTTP or network problem."""
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "image/*"})
     with _opener.open(req, timeout=TIMEOUT_S) as r:
-        return (r.headers.get("Content-Type") or "").split(";")[0].strip().lower(), r.read(IMAGE_MAX + 1)
+        return (r.headers.get("Content-Type") or "").split(";")[0].strip().lower(), _read(r, IMAGE_MAX + 1)
 
 
 def download(urls: list[str], room: int, budget: int, fetch=_fetch, check=allowed) -> list[str]:

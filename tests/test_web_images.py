@@ -52,6 +52,24 @@ def test_download_filters_and_limits():
     assert len(tried) == TRIES  # never more than TRIES URLs per email
 
 
+def test_a_dripping_server_is_given_up_on():
+    import io
+
+    class Drip:  # a few bytes per read, each inside the socket timeout: only a total deadline stops it
+        def read1(self, n):
+            now[0] += 9
+            return b"x" * 5
+
+    now = [0.0]
+    try:
+        web_images._read(Drip(), 5_000_001, total_s=20, clock=lambda: now[0])
+        raise AssertionError("a download that never finishes must time out")
+    except TimeoutError:
+        assert now[0] <= 40  # gave up after ~20 s of drip, not after 5 MB of it
+    assert web_images._read(io.BytesIO(b"abcdef"), 4) == b"abcd"  # the size cap still holds
+    assert web_images._read(io.BytesIO(b"ab"), 4) == b"ab"
+
+
 def test_no_redirects_and_switch():
     handler = next(h for h in web_images._opener.handlers if isinstance(h, urllib.request.HTTPRedirectHandler))
     assert handler.redirect_request(None, None, 302, "Found", {}, "https://10.0.0.1/") is None
