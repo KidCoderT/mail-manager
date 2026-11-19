@@ -746,4 +746,3 @@ Steps: [commands.md §7 "Hosting"](commands.md#7-running-automatically). This is
 - **Why.** Hosting for others means holding their live mailbox sessions and their email content, which includes personal data about every sender. That brings personal-data duties under Singapore's PDPA (consent, retention, deletion, breach reporting) and university IT-policy approval. A personal project can't responsibly carry those.
 - **What still works.** Everything for **you**: on your PC, or always-on on **your own** server with Docker (§9).
 - **What changes in the design.** Nothing is built for several users: no accounts, no per-user keys, no signup, no database. JSON files in `data/` stay the right choice (§4).
-- **[hosting-checklist.md](hosting-checklist.md)** is kept only as a record of what was considered. It no longer applies.

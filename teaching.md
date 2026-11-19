@@ -121,7 +121,6 @@ mail-manager/
 ├── README.md               architecture & roadmap
 ├── commands.md             every command, in detail
 ├── teaching.md             this file
-├── hosting-checklist.md    what must change before other people can use it
 ├── Dockerfile, compose.yaml, .dockerignore   running `serve` always-on on a server
 ├── data/                   (git-ignored) everything the app saves
 │   ├── session.enc         your Outlook login, encrypted
