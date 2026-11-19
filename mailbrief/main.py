@@ -852,10 +852,20 @@ def _retag(args, emails: list[dict], today, tz) -> int:
             ):  # a failed call keeps the old classification
                 changes[e["id"]] = {"classification": c}
 
+        failed, why = 0, ""
         with ThreadPoolExecutor(AI_THREADS) as ex:
-            for _ in as_completed([ex.submit(one, e) for e in targets]):
+            for future in as_completed([ex.submit(one, e) for e in targets]):
+                try:
+                    future.result()
+                except ConfigError:  # no AI key: nothing will work, say so once
+                    ex.shutdown(wait=False, cancel_futures=True)
+                    raise
+                except Exception as e:  # noqa: BLE001 - one failed call keeps that email's old classification
+                    failed, why = failed + 1, f"{type(e).__name__}: {e}"
                 done += 1
                 progress.count("Re-tagging", done, len(targets))
+        if failed:
+            print(f"warning: the AI failed for {failed} email(s), which keep their old classification (last error: {why})")
         archive.update_fields(changes)
         labels.run_step(sys.stdout)  # Outlook catches up straight away
         from mailbrief import index
