@@ -1,4 +1,4 @@
-"""Saved emails: one file per received month in data/archive/ (YYYY-MM.enc, or YYYY-MM.json with --no-password).
+"""Saved emails: one file per received month in data/archive/ (YYYY-MM.enc, or YYYY-MM.json with --plain).
 
 Encrypted with SESSION_ENCRYPTION_KEY by default; a month only ever has one of the two files. Files never
 move: "this week / this month / last month / older" are computed when viewing (period_range).

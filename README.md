@@ -466,7 +466,7 @@ There is no database: one user's data fits in a few small files in `data/` (git-
 | File | Holds | Encrypted |
 |---|---|---|
 | `session.enc` | Outlook cookies + browser identity | Yes |
-| `archive/YYYY-MM.enc` | That month's emails, classifications, digests, Outlook-label bookkeeping (below) | Yes (plain `.json` with `--no-password`) |
+| `archive/YYYY-MM.enc` | That month's emails, classifications, digests, Outlook-label bookkeeping (below) | Yes (plain `.json` with `--plain`) |
 | `cursor.json` | Newest processed time + last 500 email IDs | No (IDs only) |
 | `destinations.json` | Telegram chat IDs (written only by the CLI) | No |
 | `schedule.json`, `logs/YYYY-MM.log` | The service's state and log (no email content) | No |
@@ -479,7 +479,7 @@ Per email, the archive stores the `EmailRecord` plus `classification`, `replied`
 
 **Email archive** (`archive.py`): each run saves its emails, with their classifications and the digest, to `data/archive/YYYY-MM.enc`, one file per received month.
 - **Encrypted by default** with `SESSION_ENCRYPTION_KEY`, so there's no password to type: `mailbrief emails` decrypts in memory.
-- `run --no-password` writes plain `YYYY-MM.json` instead. A month only ever has one of the two files.
+- `run --plain` writes plain `YYYY-MM.json` instead. A month only ever has one of the two files.
 - Emails merge by ID, so re-runs never duplicate them.
 - **Already-saved emails are never sent to the AI again**: their stored classification is reused.
 - Image contents are never stored, only attachment names.
@@ -631,7 +631,7 @@ AI_ANSWER_MODEL=qwen3.8:27b     # writes the cited answers
 | Data | Goes to | Notes |
 |---|---|---|
 | Session cookies, email bodies | Local browser on your machine only | Unless Browserless is enabled (below) |
-| Saved emails (archive) | `data/archive/` on your machine | Encrypted by default; plain only with `--no-password` |
+| Saved emails (archive) | `data/archive/` on your machine | Encrypted by default; plain only with `--plain` |
 | Email text for classification/digest | `AI_BASE_URL` | Use your company's model to keep it in-house |
 | Digest text (summaries only) | Telegram | Not end-to-end encrypted; summary-level only |
 | Chat answers with quotes, and attachments you ask for | Telegram | Not end-to-end encrypted; more than summary level. `CHAT=off` turns it off |

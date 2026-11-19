@@ -125,7 +125,7 @@ The same as **`/login`** in Telegram. Use it when MailBrief runs on a server (Ra
 ## 3. `mailbrief run`
 
 ```
-uv run mailbrief run [--all] [--backfill] [--digest SCOPE] [--as-of DATE] [--json] [--send] [--commit] [--no-password] [--quiet]
+uv run mailbrief run [--all] [--backfill] [--digest SCOPE] [--as-of DATE] [--json] [--send] [--commit] [--plain] [--quiet]
 ```
 
 **What it does (default):** opens Outlook headless and finds emails that arrived since the last *committed* run. For each one it:
@@ -285,10 +285,11 @@ Marks this run's emails as **processed** by advancing the cursor, so the next `r
 
 Without `--commit` you can rerun as often as you like and see the same emails (the AI isn't called again for saved ones).
 
-#### `--no-password`
+#### `--plain`
 Saves this run's archive month files as **plain JSON** (`YYYY-MM.json`) instead of encrypted `.enc`, so you can open them in an editor.
 - Each month has only one file. Saving a month in the other format deletes the old file.
 - To go back to encrypted, run without the flag; the months it touches are rewritten as `.enc`.
+- It used to be called `--no-password`, which still works. (There was never a password: the archive is encrypted with the key in `.env`.)
 
 #### `--quiet`
 Leaves out the per-email lines and the digest text. Only progress, counts and results are printed (`Sent to telegram: …`).
@@ -309,7 +310,7 @@ Leaves out the per-email lines and the digest text. Only progress, counts and re
 | `mailbrief run --digest this-month` | Summary of everything this month (from the archive) |
 | `mailbrief run --digest all --send` | Summary of every saved email, sent to Telegram |
 | `mailbrief run --json > out.json` | Export today's new emails with classifications |
-| `mailbrief run --no-password` | Same as `run`, but archive files are readable JSON |
+| `mailbrief run --plain` | Same as `run`, but archive files are readable JSON |
 
 ### Exit codes
 | Code | Meaning |
@@ -892,7 +893,7 @@ Listed in `.env.example` but **not used by the code yet** (planned for later mil
 | `data/rules.json` | `rules add/remove/profile` (or you, by hand) | Your own labels: profile, courses, senders, topics | No (rules only, no email content) |
 | `data/cursor.json` | `run --commit`, `run --backfill` | Newest processed time + last 500 email IDs | No (IDs only) |
 | `data/archive/YYYY-MM.enc` | every `run` | That month's emails, classifications, digests, encrypted | Yes (encrypted) |
-| `data/archive/YYYY-MM.json` | `run --no-password` | Same, **plain text** | **Yes, unencrypted** |
+| `data/archive/YYYY-MM.json` | `run --plain` | Same, **plain text** | **Yes, unencrypted** |
 | `data/destinations.json` | `add-destination` | Telegram chat IDs | Mildly |
 | `data/archive/…` (fields) | `run`, `labels` | Per email: `outlook_labels` (what Outlook was given), `labels_cleared`, `outlook_gone` | (inside the archive) |
 | `data/schedule.json` | `serve` | Schedule, last scheduled time done, last run result, next run | No |

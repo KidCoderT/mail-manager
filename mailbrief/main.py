@@ -1278,10 +1278,12 @@ def _main() -> None:
         help="mark these emails processed (advance the cursor)",
     )
     run_p.add_argument(
-        "--no-password",
+        "--plain",
         action="store_true",
-        help="save the archive as plain JSON instead of encrypted",
+        help="save the archive as plain, unencrypted JSON you can open in an editor",
     )
+    # The old name. There never was a password: the archive is encrypted with the key in .env.
+    run_p.add_argument("--no-password", dest="plain", action="store_true", help=argparse.SUPPRESS)
     run_p.add_argument(
         "--quiet",
         action="store_true",
@@ -1548,7 +1550,7 @@ def _main() -> None:
                 as_json=args.json,
                 commit=args.commit,
                 send=args.send,
-                plain=args.no_password,
+                plain=args.plain,
                 backfill=args.backfill,
                 digest_scope=args.digest_scope,
                 quiet=args.quiet,

@@ -788,7 +788,7 @@ The rules every scope's prompt includes: plain text (Telegram doesn't render tab
 #### Files and formats
 ```
 data/archive/2026-10.enc     ← encrypted (default)
-data/archive/2026-10.json    ← plain (when run with --no-password)
+data/archive/2026-10.json    ← plain (when run with --plain)
 A month has only ONE of the two: writing one format deletes the other.
 ```
 
