@@ -147,6 +147,18 @@ def handler(win):
         def log_message(self, *args):  # no request lines in any log
             pass
 
+        def version_string(self) -> str:  # the Server header: don't name the software or the Python version
+            return "web"
+
+        def send_error(self, code, message=None, explain=None):  # the stdlib's HTML error pages name it too
+            try:
+                self._nope()
+            except OSError:  # the client already hung up
+                pass
+            self.close_connection = True
+
+        do_HEAD = do_PUT = do_DELETE = do_OPTIONS = do_PATCH = lambda self: self._nope()
+
         def _send(self, code: int, body: bytes = b"", ctype: str = "text/plain", headers: dict | None = None):
             self.send_response(code)
             self.send_header("Content-Type", ctype)

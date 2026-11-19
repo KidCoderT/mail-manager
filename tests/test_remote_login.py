@@ -77,6 +77,18 @@ def test_a_silent_connection_is_dropped():
         server.server_close()
 
 
+def test_the_server_says_nothing_about_itself():
+    s = serve(rl.Window())
+    try:
+        for method, path in (("GET", "/"), ("PUT", "/login"), ("OPTIONS", "/input"), ("DELETE", "/status"), ("BREW", "/")):
+            status, headers, body = call(s, method, path)
+            assert status == 404 and body == b"Not found", (method, status)
+            assert "Python" not in headers.get("Server", "") and "BaseHTTP" not in headers.get("Server", "")
+    finally:
+        s.shutdown()
+        s.server_close()
+
+
 def test_input_checks():
     win = rl.Window(secure=False)
     s = serve(win)
