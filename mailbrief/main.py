@@ -1128,6 +1128,27 @@ def main() -> None:
     except KeyboardInterrupt:  # Ctrl+C anywhere (a prompt, a backfill): a word, not a traceback
         print("\nStopped.", file=sys.stderr)
         sys.exit(130)
+    except Exception as e:  # noqa: BLE001
+        if (msg := _explain(e)) is None:
+            raise  # a real bug: keep the traceback
+        sys.exit(msg)
+
+
+def _explain(e: Exception) -> str | None:
+    """One line and a next step for the failures that are about the setup, not the code. None: not one of those."""
+    from cryptography.fernet import InvalidToken
+
+    if isinstance(e, InvalidToken):
+        return ("Can't decrypt the saved data: SESSION_ENCRYPTION_KEY in .env isn't the key it was saved with.\n"
+                "Put the original key back, or start again with this one: `mailbrief login` "
+                "(emails archived with the old key stay unreadable without it).")
+    if type(e).__module__.startswith("playwright"):
+        text = str(e).splitlines()[0] if str(e) else type(e).__name__
+        if "Executable doesn't exist" in str(e):
+            return "The browser isn't installed yet. Run: uv run playwright install chromium --no-shell"
+        if "net::" in text or "Timeout" in text:
+            return f"Couldn't reach Outlook (is the network up?): {text[:160]}"
+    return None
 
 
 def _main() -> None:
