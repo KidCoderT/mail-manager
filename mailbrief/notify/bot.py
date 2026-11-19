@@ -25,7 +25,7 @@ Each answer cites its emails: tap ↗ or a source to open it in Outlook.
 /new: start a fresh conversation
 /sync: check for new mail now (sends the digest)
 /digest: send the latest digest again
-/events [days]: upcoming events (default 14 days)
+/events [days]: upcoming events (default: EVENTS_DAYS, 14)
 /rules: your own label rules
 /rule add course CS2040S | sender a@b.c "Prof X" [direct] [boost] [p2] | topic Name "description" [p2]
 /rule remove course|sender|topic KEY
@@ -290,7 +290,11 @@ class Bot:
         from mailbrief import archive, events, rules
 
         # isascii: "²" and "٣" pass isdigit() but int() refuses them
-        days = int(rest) if rest.isascii() and rest.isdigit() and 1 <= int(rest) <= 365 else events.DEFAULT_DAYS
+        if rest and not (rest.isascii() and rest.isdigit() and 1 <= int(rest) <= 365):
+            self.say(chat_id, "Usage: /events, or /events 30 for the next 30 days (1 to 365).")
+            return
+        # the same default as the morning message and `mailbrief events`: EVENTS_DAYS (0 there means 14 here)
+        days = int(rest) if rest else events.days() or events.DEFAULT_DAYS
         try:
             your_rules = rules.load()
         except rules.RulesError:

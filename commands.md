@@ -257,6 +257,7 @@ Prints the selected emails as a **JSON array on stdout** instead of the readable
 uv run mailbrief run --json > today.json          # file contains only JSON
 uv run mailbrief run --json | python -m json.tool  # pretty-print / validate
 ```
+On a day with no new mail it prints `[]`, so the pipe always gets valid JSON.
 ⚠️ The output contains full email text, unencrypted. Don't leave such files in the repo, because `*.json` exports aren't git-ignored.
 
 #### `--send`
@@ -327,7 +328,7 @@ Leaves out the per-email lines and the digest text. Only progress, counts and re
 ## 4. `mailbrief emails`
 
 ```
-uv run mailbrief emails [--period P | --day YYYY-MM-DD | --search TEXT] [--show N | --thread N | --digest | --export FILE]
+uv run mailbrief emails [--period P | --day YYYY-MM-DD | --search TEXT] [--show N | --thread N | --digest [--send] | --export FILE]
 ```
 
 **What it does:** browses the **saved archive** offline. It never touches Outlook or the AI, so it's instant and works without internet. It reads encrypted `.enc` and plain `.json` month files alike, decrypting in memory only.
@@ -399,7 +400,7 @@ uv run mailbrief events --past 30 --days 0   # only the last 30 days
 - **Grouped by day** (`FRI 23 OCT`), soonest first. Within a day, ⭐ boosted events (your rules, section 5) come first, then by time.
 - **Each event:** time · name · place, then its one-line detail, then the sign-up deadline ("sign-up closed" once passed) and link.
 - **The same event in two emails** (same name and date) is shown once, with the details of both.
-- **Past events are dropped.** Events with no date only show in the morning message on the day their email arrives (under DATE NOT GIVEN), so `mailbrief events` on its own lists dated events only.
+- **Past events are left out** unless you ask for them with `--past N`. Events with no date only show in the morning message on the day their email arrives (under DATE NOT GIVEN), so `mailbrief events` on its own lists dated events only.
 - **🆕** marks events from the emails the current digest covers (only in the message `run --send` sends).
 - **Older mail has no events** until it's re-classified: `labels retag --period this-month` (section 5).
 - **Past events: `--past N`** adds the last N days, in calendar order, with past days headed like `MON 13 OCT (PAST)`. Past events skip the sign-up line (it would always say "closed") but keep their link. `--days 0` drops the days ahead, so `--past 30 --days 0` is a list of the last month's events; `--send` sends exactly what's printed. Only emails that have events saved show up: older mail needs `labels retag --period …` first.
@@ -557,7 +558,7 @@ uv run mailbrief rules remove course MA1521                           # old emai
 - **Colours:** courses dark blue, senders cranberry, topics dark green (recolour them in Outlook if you like).
 - **A broken `rules.json`** (say, a typo while hand-editing) never breaks the morning digest: the run warns, classifies without rules, and **skips Outlook labelling** that run so your labels aren't stripped. `rules list` shows the exact error.
 - **`emails --show N`** shows an email's own labels (`Yours: …`), whether it's boosted, and its `To:` line ("only you" for private mail).
-- **Telegram commands** (`/label add …`) come with the Telegram chat in M7.
+- **Telegram commands** (`/rules`, `/rule add …`, `/rule remove …`, `/profile …`) do the same from your chat (section 13).
 
 #### One-off after upgrading: recipients, image lists and events
 `--direct` needs each email's To/Cc, and the newer image rule (inline posters) needs each email's refreshed image list. Older saved emails have neither. Fill them in once:
@@ -692,7 +693,7 @@ Autostart: on (starts at logon)
 Log:       data\logs\2026-10.log
 ```
 - `Right now: a run is in progress` appears during a run; `stopping (finishing the current run)` after a `stop`.
-- `Last run` results: `ok`, `login needed`, or `failed (exit N)`. The log has the details.
+- `Last run` results: `ok`, `login needed`, `sent, but not marked processed (cursor kept)`, or `failed (exit N)`. The log has the details.
 
 ### `mailbrief autostart on|off` (Windows)
 ```
@@ -864,7 +865,7 @@ uv add <package>      # updates pyproject.toml + uv.lock and installs it
 | `AI_VISION_MODEL` | `qwen3.6:35b` | Classifies emails with image attachments |
 | `AI_DIGEST_MODEL` | `qwen3.8:27b` | Writes the digest (thinking on) |
 | `AI_FALLBACK_MODEL` | `qwen3.6:35b` | Used when another model gives no answer in time (one try, then this). Empty = never switch |
-| `TELEGRAM_BOT_TOKEN` | *(none)* | Needed by `add-destination` and `run --send` |
+| `TELEGRAM_BOT_TOKEN` | *(none)* | Needed by everything that talks to Telegram: `add-destination`, `run --send`, `serve` (digests, alerts and the chat), `bot`, `events --send`, `emails --digest --send` |
 | `DEFAULT_TIMEZONE` | `Asia/Singapore` | Displayed times, `--day`, periods, which month file an email goes in |
 | `ARCHIVE_DAYS` | `0` (forever) | If > 0, `run` deletes month files that ended more than this many days ago |
 | `BROWSER_WS_URL` | *(empty)* | Empty = local Chromium. Set it to connect to a Browserless/CDP browser instead |
@@ -1002,7 +1003,7 @@ uv run mailbrief login
 
 | Command | 0 | 1 | 2 |
 |---|---|---|---|
-| `login` | saved | (n/a) | (n/a) |
+| `login` | saved | `--remote`: you didn't sign in before the page closed, or the sign-in didn't stick | `--remote`: `PUBLIC_URL` isn't https, or the port couldn't be opened (3 = a run is using Outlook) |
 | `run` | success | cursor not advanced | no session / session expired (3 = another run in progress, 4 = sent but cursor kept: previews only or archive not saved, 5 = inbox list unreadable) |
 | `serve` | stopped normally | (n/a) | bad schedule (3 = already running, 130 = forced stop) |
 | `labels` | done / dry run | answered no / archive unreadable | bad options / login needed (3 = run in progress) |
@@ -1077,7 +1078,7 @@ Runs inside `mailbrief serve` (or alone with `mailbrief bot`, for testing). It l
 | `/new` | Forget this conversation |
 | `/sync` | Check for new mail now: a normal run with `--send`, so the digest arrives as usual. With nothing new it replies `✅ No new mail since the last check.` |
 | `/digest` | Send the latest saved digest again (with links), then the events calendar |
-| `/events [days]` | The upcoming-events calendar (default 14 days) |
+| `/events [days]` | The upcoming-events calendar (default: `EVENTS_DAYS`, 14; 1 to 365) |
 | `/rules` | Your label rules (as `mailbrief rules list`) |
 | `/rule add course CS2040S [p2] [boost]` | Add a course rule |
 | `/rule add sender a@b.c "Prof X" [direct] [boost] [p1]` | Add a sender rule (`direct`: only mail where you're the only To recipient) |

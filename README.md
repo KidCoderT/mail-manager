@@ -240,10 +240,10 @@ Adding a channel means writing one `send_<channel>(target, digest)` function and
 
 - **Multiple destinations.** Every digest goes to all active destinations.
 - **Telegram's limit is ~4,096 chars/message.** Split long digests into parts, with the top priorities first.
-- Delivery failures to one destination don't block the others. Each is retried and logged.
+- Delivery failures to one destination don't block the others. Each failure is logged; Telegram's rate limit (429) is waited out and retried, and if no destination got the digest the run isn't marked processed, so the next run sends it.
 
 **Telegram bot lockdown** (nobody else can use or hijack the bot):
-- **Today (M1–M5): send-only.** The app never polls for incoming messages, so `/start` from strangers does nothing. There is no self-registration and no invite codes.
+- **No self-registration and no invite codes.** A stranger who finds the bot and sends `/start` gets nothing back.
 - **Allowlisted listener (M7 ✅).** To answer your questions (§3.9) and take label commands (§3.8), `serve` reads the bot's incoming messages. It **acts only on private chats listed in `data/destinations.json`**. Every other chat, and every group, is ignored without a reply, so a stranger who finds the bot learns nothing. `CHAT=off` returns to send-only.
 - **Destinations are added only via the local CLI** (`mailbrief add-destination`). The CLI reads the chat ID once, during setup, from the message you send the bot. The bot can never add a chat itself.
 - In BotFather, set **`/setjoingroups` → Disable**, so nobody can add the bot to their own group. Re-enable it briefly only to add it to your own group.

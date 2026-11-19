@@ -1,4 +1,5 @@
-"""Send-only Telegram bot. It never polls: getUpdates runs only during `mailbrief add-destination`.
+"""Sending to Telegram: digests, alerts, chat replies and files. Reading incoming messages is notify/bot.py's
+job (and `mailbrief add-destination`, once, to find your chat).
 
 A digest that fits goes as one message. A longer one goes as one message per section (header + first
 section, then KEY EVENTS, NOISE, …); a section that is still too long is split on line breaks, with

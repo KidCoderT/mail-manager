@@ -123,7 +123,7 @@ def test_commands_and_errors():
 
     api.updates = [msg(41, 111, "/events ²")]  # a digit to isdigit(), not to int()
     b.poll_once()
-    assert api.sent()[-1]["text"].startswith("No events in the next")
+    assert api.sent()[-1]["text"].startswith("Usage: /events")  # said, not silently replaced by the default
 
     api.updates = [{"update_id": 42, "message": {"chat": {"id": 111, "type": "private"}, "photo": [{"file_id": "x"}]}}]
     b.poll_once()
