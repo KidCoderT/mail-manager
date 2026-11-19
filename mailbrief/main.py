@@ -255,7 +255,7 @@ def run(
                 pending += batch
                 progress.count("Classifying", done, len(todo))
                 if (
-                    backfill and len(pending) >= BACKFILL_SAVE_EVERY
+                    backfill and full_text and len(pending) >= BACKFILL_SAVE_EVERY
                 ):  # Ctrl+C keeps everything saved so far
                     archive.save(
                         pending, [e["classification"] for e in pending], None, plain, tz
@@ -263,7 +263,7 @@ def run(
                     pending = []
         except BaseException:  # Ctrl+C, or no AI key: don't let the queued conversations call the AI anyway
             ex.shutdown(wait=False, cancel_futures=True)
-            if backfill and pending:  # keep what was classified since the last save
+            if backfill and full_text and pending:  # keep what was classified since the last save
                 archive.save(pending, [e["classification"] for e in pending], None, plain, tz)
             raise
     t_classify = time.time() - t1
@@ -276,9 +276,10 @@ def run(
         print(f"warning: old archive months not pruned ({type(e).__name__}: {e}); check ARCHIVE_DAYS", file=log)
     try:  # a failure here must not lose the digest or block delivery (but the cursor stays: see below)
         progress.step("Saving to the archive…")
-        paths = archive.save(
-            records, [r["classification"] for r in records], None, plain, tz
-        )
+        # List previews (GetItem failed) are not saved: they're keyed by conversation, so the real emails
+        # would never replace them and every later view would show the conversation twice.
+        keep = [r for r in records if r.get("body_source") == "getitem"]
+        paths = archive.save(keep, [r["classification"] for r in keep], None, plain, tz)
         kind = "plain JSON" if plain else "encrypted"
         names = ", ".join(p.name for p in paths) or "nothing new"
         saved_msg = f"Saved ({kind}): {names} in {archive.ARCHIVE_DIR}  (view with `mailbrief emails`)"

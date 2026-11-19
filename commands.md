@@ -279,7 +279,7 @@ Sends the digest to every active destination in `data/destinations.json` (see `a
 
 #### `--commit`
 Marks this run's emails as **processed** by advancing the cursor, so the next `run` won't show them again. It **refuses** in three cases (exit 4 for previews or an unsaved archive, exit 1 for no delivery):
-- any email has only the list **preview**, not full text (the GetItem fallback was used). Moving the cursor would lose those emails' full text for good;
+- any email has only the list **preview**, not full text (the GetItem fallback was used). Moving the cursor would lose those emails' full text for good (preview records are used for that run's digest only and are never saved to the archive);
 - the emails **couldn't be saved** to the archive (disk full, a file locked, a month that won't decrypt). The archive is where failed AI calls are retried from, so moving the cursor would lose them;
 - `--send` was used and the digest reached **no** destination.
 
