@@ -74,12 +74,12 @@ def run(
     show_all = show_all or backfill
     # The morning digest by default; a backfill writes none unless a scope is asked for explicitly.
     scope = digest_scope or (None if backfill else "new")
+    log = sys.stderr if as_json else sys.stdout  # in --json mode stdout is pure JSON
     session = manager.load()
     if session is None:
-        print("No saved session. Run `mailbrief login` first.")
+        print("No saved session. Run `mailbrief login` first.", file=log)
         return 2
     tz = _tz()
-    log = sys.stderr if as_json else sys.stdout  # in --json mode stdout is pure JSON
     progress.step("Loading saved emails…")
     try:
         archived = {e["id"]: e for e in archive.load()[0]}
@@ -113,7 +113,7 @@ def run(
             page = context.new_page()
             result = read_inbox(page)
             if result["expired"]:
-                print("Outlook session expired. Run `mailbrief login` again.")
+                print("Outlook session expired. Run `mailbrief login` again.", file=log)
                 return 2
             # A conversation whose latest email predates the cursor has nothing new in it.
             convs = [
@@ -178,6 +178,8 @@ def run(
         from mailbrief import labels
 
         labels.run_step(log)  # labels still pending from earlier runs
+        if as_json:
+            print("[]")  # still valid JSON for whatever reads the pipe
         return 0
 
     # Threads: earlier messages from the archive plus everything fetched now (fresh copies win).
