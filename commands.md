@@ -913,9 +913,12 @@ uv sync
 uv run playwright install chromium --no-shell
 # create .env (see section 1)
 uv run mailbrief login
-uv run mailbrief run --backfill        # optional: archive the whole inbox once
-uv run mailbrief add-destination telegram
+uv run mailbrief add-destination telegram   # message your bot in Telegram first
+uv run mailbrief run --send --commit        # your first digest (the last 24 hours)
+uv run mailbrief run --backfill             # optional, AFTER the first digest: archive the whole inbox once
+uv run mailbrief index rebuild              # optional: makes the backfilled mail searchable in chat
 ```
+The order matters: `--backfill` marks the whole inbox as processed, so run first it leaves nothing "new" and your first `run --send --commit` would say `No new emails, so no digest.`
 
 **Every morning by hand**
 ```
