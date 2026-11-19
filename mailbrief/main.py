@@ -879,6 +879,8 @@ def _retag(args, emails: list[dict], today, tz) -> int:
 def rules_command(args, out=None) -> int:
     """`mailbrief rules list|add|remove|profile`: your own labels in data/rules.json."""
     say = functools.partial(print, file=out or sys.stdout)  # out: the chat bot's reply buffer
+    chat = out is not None  # in Telegram, point at chat commands: `--label` and `mailbrief …` can't be typed there
+    on_pc = " on the machine MailBrief runs on" if chat else ""
     from mailbrief import archive, rules
 
     try:
@@ -923,7 +925,7 @@ def rules_command(args, out=None) -> int:
     if args.action == "profile":
         new = {**current, "profile": args.text}
         msg = f"Profile set: {args.text}" if args.text.strip() else "Profile cleared."
-        tail = "It shapes priorities for new mail; `labels retag --period this-month` re-asks for older mail."
+        tail = f"It shapes priorities for new mail; `mailbrief labels retag --period this-month`{on_pc} re-asks for older mail."
     elif args.action == "add":
         kind = {"course": "courses", "sender": "senders", "topic": "topics"}[args.kind]
         rule = {
@@ -946,11 +948,14 @@ def rules_command(args, out=None) -> int:
             },
         }[kind]
         if kind == "senders" and not args.label:
-            say('A sender needs --label, e.g. --label "Prof Tan".')
+            say('A sender needs a label name, e.g. /label add sender tan@example.edu "Prof Tan"' if chat
+                else 'A sender needs --label, e.g. --label "Prof Tan".')
             return 2
         if kind == "topics" and not args.description:
             say(
-                'A topic needs a description, e.g. rules add topic Networking "career fairs, meetups, hackathons".'
+                'A topic needs a description, e.g. '
+                + ("/label" if chat else "rules")
+                + ' add topic Networking "career fairs, meetups, hackathons".'
             )
             return 2
         try:
@@ -961,21 +966,22 @@ def rules_command(args, out=None) -> int:
         label = rules.label_name(kind, new[kind][-1])
         msg = f"✅ Added {label}."
         if kind == "topics":
-            tail = "The AI tags new mail with it; `labels retag --period this-month` does older mail."
+            tail = f"The AI tags new mail with it; `mailbrief labels retag --period this-month`{on_pc} does older mail."
         else:
             n = sum(any(m[0] == label for m in rules.matches(e, new)) for e in emails)
-            tail = f"{n} saved emails match; Outlook gets the label on the next run (or `labels apply`)."
+            tail = f"{n} saved emails match; Outlook gets the label on the next run " \
+                   + ("(/sync does one now)." if chat else "(or `mailbrief labels apply`).")
     else:  # remove
         kind = {"course": "courses", "sender": "senders", "topic": "topics"}[args.kind]
         new, gone = rules.remove(current, kind, args.key)
         if gone is None:
             say(
-                f"No {args.kind} {args.key!r} in your rules (see `mailbrief rules list`)."
+                f"No {args.kind} {args.key!r} in your rules (see {'/labels' if chat else '`mailbrief rules list`'})."
             )
             return 1
         label = rules.label_name(kind, gone)
         msg = f"Removed {label}."
-        tail = f'Emails already labelled keep it; remove it with `mailbrief labels clear --label "{label[4:]}"`.'
+        tail = f'Emails already labelled keep it; remove it with `mailbrief labels clear --label "{label[4:]}"`{on_pc}.'
     try:
         rules.save(new)
     except rules.RulesError as e:

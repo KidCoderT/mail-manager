@@ -142,6 +142,15 @@ def test_commands_and_errors():
     assert synced and "Checking for new mail" in texts[-2] and texts[-1].startswith("✅ No new mail")
 
 
+def test_chat_replies_never_tell_you_to_type_cli_flags():
+    assert "/label add sender" in label_command("add sender a@example.com") and "--label" not in label_command("add sender a@example.com")
+    assert "/label add topic" in label_command("add topic Networking")
+    assert "/labels" in label_command("remove course NOPE101") and "mailbrief rules list" not in label_command("remove course NOPE101")
+    added = label_command("add course zz9999")
+    assert "/sync" in added and "labels apply" not in added
+    assert "on the machine MailBrief runs on" in label_command("remove course zz9999")  # a PC-only step says so
+
+
 def botmod_labels():
     from mailbrief import labels
     return labels
