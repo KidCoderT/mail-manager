@@ -260,7 +260,7 @@ These formats are internal and undocumented, so all parsing lives in **one file*
 ### 3.3 AI Processor
 A two-pass pipeline behind **one function**, `complete(model, messages, thinking)` (`ai/client.py`, stdlib `urllib`). It calls any **OpenAI-compatible** chat endpoint set by `AI_BASE_URL`. **Your company's own AI model is the preferred choice**, so email content stays in-house. No provider-specific code lives anywhere else.
 
-**Setup:** `AI_BASE_URL` and `AI_API_KEY` in `.env`. Both are required: there is no default endpoint. The models below are the ones this was built and tested with, on an in-house endpoint; use the names your endpoint serves.
+**Setup:** `AI_BASE_URL` and `AI_API_KEY` in `.env`. The endpoint is required; the key is optional for a local server without authentication. There is no default endpoint. The models below are the ones this was built and tested with, on an in-house endpoint; use the names your endpoint serves.
 
 | Role | Model | Why |
 |---|---|---|
@@ -685,7 +685,7 @@ mail-manager/
 ```
 # AI: any OpenAI-compatible endpoint (preferably your company's own model)
 AI_BASE_URL=                     # required: your endpoint, e.g. http://localhost:11434/v1
-AI_API_KEY=                      # required: its key
+AI_API_KEY=                      # its key, if authentication is required
 AI_CLASSIFIER_MODEL=qwen3.6:35b
 AI_VISION_MODEL=qwen3.6:35b
 AI_DIGEST_MODEL=qwen3.8:27b

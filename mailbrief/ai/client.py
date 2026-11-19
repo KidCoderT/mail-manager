@@ -66,17 +66,14 @@ def embed(texts: list[str], model: str | None = None) -> list[list[float]]:
 
 
 def settings() -> tuple[str, str]:
-    """(endpoint, key) from .env, or ConfigError saying what's missing. Commands call this before they open
+    """(endpoint, optional key) from .env, or ConfigError saying what's missing. Commands call this before they open
     Outlook, so a missing setting shows in a second, not after a minute of reading the inbox."""
     base = (os.environ.get("AI_BASE_URL") or "").strip()
     if not base:  # no built-in default: where your email text goes is your decision, never an assumption
         raise ConfigError("AI_BASE_URL is not set: put your OpenAI-compatible endpoint in .env, "
                           "e.g. AI_BASE_URL=http://localhost:11434/v1 (see .env.example)")
     key = os.environ.get("AI_API_KEY") or os.environ.get(LEGACY_KEY)
-    if not key:
-        raise ConfigError("AI_API_KEY is not set: put your endpoint's key in .env "
-                          "(a local server that needs none still wants any value, e.g. AI_API_KEY=local)")
-    return base, key
+    return base, key or ""
 
 
 def _post(path: str, body: dict, timeout: float = 120, timeout_retries: int = TIMEOUT_RETRIES) -> dict:
@@ -87,7 +84,7 @@ def _post(path: str, body: dict, timeout: float = 120, timeout_retries: int = TI
     req = urllib.request.Request(
         url,
         data=json.dumps(body).encode(),
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {key}"} if key else {})},
     )
     busy = hung = 0
     while True:

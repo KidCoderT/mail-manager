@@ -75,12 +75,12 @@ def test_dropped_connections_are_retried_and_waits_are_capped():
     assert patched(Fake([{"error": "overloaded"}]), lambda: client.complete("m", [])) == ""
 
 
-def test_no_endpoint_or_key_is_a_clear_error_not_a_default():
+def test_no_endpoint_is_a_clear_error_and_local_key_is_optional():
     from mailbrief import ConfigError
 
     saved = {k: os.environ.pop(k, None) for k in ("AI_BASE_URL", "AI_API_KEY", client.LEGACY_KEY)}
     try:
-        for missing, env in (("AI_BASE_URL", {"AI_API_KEY": "k"}), ("AI_API_KEY", {"AI_BASE_URL": "https://ai.example.com/v1"})):
+        for missing, env in (("AI_BASE_URL", {"AI_API_KEY": "k"}),):
             os.environ.update(env)
             try:
                 client.settings()
@@ -91,9 +91,25 @@ def test_no_endpoint_or_key_is_a_clear_error_not_a_default():
                 os.environ.pop(k)
         os.environ.update(AI_BASE_URL="https://ai.example.com/v1/", AI_API_KEY="k")
         assert client.settings() == ("https://ai.example.com/v1/", "k")
+        os.environ.pop("AI_API_KEY")
+        os.environ["AI_BASE_URL"] = "http://localhost:11434/v1"
+        assert client.settings() == ("http://localhost:11434/v1", "")
     finally:
         for k, v in saved.items():
             os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+
+
+def test_keyless_endpoint_sends_no_authorization_header(monkeypatch):
+    monkeypatch.setenv("AI_BASE_URL", "http://localhost:11434/v1")
+    monkeypatch.delenv("AI_API_KEY", raising=False)
+    monkeypatch.delenv(client.LEGACY_KEY, raising=False)
+
+    def urlopen(req, timeout):
+        assert not req.has_header("Authorization")
+        return io.BytesIO(b'{}')
+
+    monkeypatch.setattr(client.urllib.request, "urlopen", urlopen)
+    assert client._post("/embeddings", {}) == {}
 
 
 def test_other_errors_are_not_retried():

@@ -39,7 +39,7 @@ uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_
 ```
 Put the output in `SESSION_ENCRYPTION_KEY=`. **Keep it safe.** It decrypts your Outlook session and your email archive. Lose it and both are unreadable, so you'd need to log in again and the archive is gone.
 
-`AI_BASE_URL` (your OpenAI-compatible endpoint) and `AI_API_KEY` are required: there is no default endpoint. The endpoint needs a chat model, one that accepts images, and an embedding model; set the `AI_*_MODEL` names to the ones it serves. `AI_API_KEY` and `TELEGRAM_BOT_TOKEN` can live in `.env` or in a user environment variable.
+`AI_BASE_URL` (your OpenAI-compatible endpoint) is required: there is no default endpoint. Set `AI_API_KEY` if that endpoint requires authentication. The endpoint needs a chat model, one that accepts images, and an embedding model; set the `AI_*_MODEL` names to the ones it serves. `AI_API_KEY` and `TELEGRAM_BOT_TOKEN` can live in `.env` or in a user environment variable.
 
 ---
 
@@ -864,7 +864,7 @@ uv add <package>      # updates pyproject.toml + uv.lock and installs it
 |---|---|---|
 | `SESSION_ENCRYPTION_KEY` | *(required)* | Encrypts `session.enc` and archive `.enc` files |
 | `AI_BASE_URL` | *(none: required)* | The OpenAI-compatible endpoint your email text is sent to, e.g. `http://localhost:11434/v1` |
-| `AI_API_KEY` | *(none: required)* | The endpoint's key, in `.env` or as an environment variable. A local server that needs none still wants some value |
+| `AI_API_KEY` | *(none)* | The endpoint's key, if authentication is required; leave empty for a keyless local server |
 | `AI_CLASSIFIER_MODEL` | `qwen3.6:35b` | Classifies text-only emails |
 | `AI_VISION_MODEL` | `qwen3.6:35b` | Classifies emails with image attachments |
 | `AI_DIGEST_MODEL` | `qwen3.8:27b` | Writes the digest (thinking on) |
