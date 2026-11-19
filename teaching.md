@@ -1079,7 +1079,7 @@ The only imperfect case is a kill between "digest sent" and "cursor saved": you'
 **Why does Docker get `stop_grace_period: 10m`?** `docker stop` sends SIGTERM, waits (10 s by default), then force-kills. Ten minutes lets a run in progress finish. `init: true` adds a tiny first process (PID 1) that passes the signal on to `serve` properly.
 
 #### Retries and the login alert
-- **Exit 1 or 3, or a timeout:** worth retrying. Typical causes are no network yet after waking, or a run you started by hand still going. So it retries in 15 min, up to 3 attempts, then moves on to the next scheduled time.
+- **Exit 1 or 3, or a timeout:** worth retrying. Typical causes are no network yet after waking, or a run you started by hand still going. So it retries in 15 min, up to 3 attempts, then moves on to the next scheduled time. When it gives up it sends one Telegram message (at most once a day) naming the last result: silence should mean "no new mail", never "broken".
 - **Exit 4** (digest sent, but the cursor kept because only previews were available, or the archive couldn't be saved): treated as done. A retry would only send the same digest again.
 - **Exit 2 (login expired):** retrying can't help, because only you can log in. An unattended service that just logs "login needed" would leave you wondering why the digests stopped. So it sends a Telegram message, **at most once a day** (remembered in `schedule.json`), so a week of failed runs doesn't spam you.
 

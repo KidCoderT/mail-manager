@@ -227,21 +227,35 @@ def _run_child(scope: str, at: datetime | None = None) -> int:
 _children: set = set()  # runs started by _run_child that haven't finished
 
 
-def _alert_login(state: dict) -> None:
-    """Once a day: tell the destinations the Outlook login needs renewing (unattended runs can't ask)."""
+def _alert(state: dict, key: str, text: str) -> None:
+    """Tell the destinations something only you can fix, at most once a day per kind (`key` in schedule.json)."""
     today = datetime.now(_tz()).date().isoformat()
-    if state.get("alert_day") == today:
+    if state.get(key) == today:
         return
     from mailbrief.main import deliver
 
     out = io.StringIO()
+    try:
+        if deliver(text, out):
+            state[key] = today
+    except Exception as e:  # noqa: BLE001 - an alert that can't be sent must never stop the service
+        log(f"alert not sent ({type(e).__name__})")
+    for line in out.getvalue().splitlines():
+        log(line)
+
+
+def _alert_login(state: dict) -> None:
+    """The Outlook login needs renewing (unattended runs can't ask)."""
     from mailbrief.notify import bot
 
     how = "send /login here to sign in again" if bot.enabled() else "run `mailbrief login`"
-    if deliver(f"⚠️ MailBrief: the Outlook login has expired, so no digest until you {how}.", out):
-        state["alert_day"] = today
-    for line in out.getvalue().splitlines():
-        log(line)
+    _alert(state, "alert_day", f"⚠️ MailBrief: the Outlook login has expired, so no digest until you {how}.")
+
+
+def _alert_failed(state: dict, result: str) -> None:
+    """A slot was given up on: without this, a broken install looks exactly like a day with no mail."""
+    _alert(state, "fail_alert_day", f"⚠️ MailBrief: the scheduled run failed {MAX_ATTEMPTS} times ({result}), so there's "
+           "no digest this time. On the machine it runs on: `mailbrief status`, then the log file it names.")
 
 
 def serve(spec: str) -> int:
@@ -317,6 +331,7 @@ def _serve(spec: str, schedule: list[dict]) -> int:
                 if complete or (attempts >= MAX_ATTEMPTS and not stopping.is_set()):
                     if not complete:
                         log(f"giving up on this slot after {MAX_ATTEMPTS} attempts; the next scheduled run goes ahead as normal")
+                        _alert_failed(state, result)
                     # done_now too: `due` holds only what was left for this attempt, and a slot that already
                     # succeeded on an earlier attempt may be the latest one (else it would fire again)
                     state["last_done"] = max(at for at, _ in [*due, *done_now]).isoformat()

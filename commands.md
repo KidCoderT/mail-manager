@@ -660,7 +660,7 @@ How it behaves:
 - **Catch-up:** if the PC was off or asleep at a scheduled time, that run happens as soon as `serve` is running again. Only the **latest** missed run of each scope is done: off for three days means one `new` digest, not three (it covers all three days anyway).
 - **First start ever:** no catch-up; it waits for the next scheduled time.
 - **Each run is a separate process** with a 45-minute limit. If Outlook or the AI hangs, that run is killed and `serve` carries on.
-- **Retries:** a failed run (e.g. no network right after waking) is retried after 15 min, up to 3 attempts, then skipped until the next scheduled time.
+- **Retries:** a failed run (e.g. no network right after waking) is retried after 15 min, up to 3 attempts, then skipped until the next scheduled time. When that happens you get one Telegram message (at most once a day) saying the run failed and with what result, so a broken setup never looks like a quiet day.
 - **Login expired:** not retried, since only you can log in. It sends **one Telegram message a day**: `⚠️ MailBrief: the Outlook login has expired…`. Send `/login` to the bot (with chat on), or run `mailbrief login`; the next scheduled run works again.
 - **No email content in the log:** scheduled runs use `--quiet`, so only progress, counts and results are logged, never subjects or digest text (the digest is in Telegram and the encrypted archive).
 - **Only one `serve` at a time:** a second one says `MailBrief is already running` (exit 3).
