@@ -881,7 +881,7 @@ uv add <package>      # updates pyproject.toml + uv.lock and installs it
 | `LOGIN_PAGE` | *(empty)*; automatic on Render | `always`: `serve` keeps the port open, answering 404 to everything except an open sign-in. For hosts that require an open port |
 | `LOGIN_TUNNEL` | *(empty)* | `cloudflared`: on your PC (no `PUBLIC_URL`), `/login` opens a temporary `https://….trycloudflare.com` tunnel so the link works on your phone. Cloudflare sees the traffic |
 
-Listed in `.env.example` but **not used by the code yet** (planned for later milestones): `FALLBACK_AGENT`, `DATABASE_URL`, `RESTORE_UNREAD` (`SORT_MODE` is replaced by `OUTLOOK_LABELS`; a "move to folders" mode is M6).
+Older versions of `.env.example` also listed `FALLBACK_AGENT`, `DATABASE_URL` and `RESTORE_UNREAD`. The code never read them (they were for features that were not built), so they are gone; delete them from your `.env` if you like.
 
 ---
 

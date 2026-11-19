@@ -135,7 +135,7 @@ These formats are internal and undocumented, so all parsing lives in **one file*
 
 **Fallback: list previews.** If `GetItem` fails, the run still produces one record per conversation, with Outlook's list preview as the body (`body_source: "preview"`). The cursor never advances on a preview run.
 
-**Deferred: DOM fallback.** Opening each email via a selectors file (not built) and restoring its unread state (`RESTORE_UNREAD`) would only be needed if both the list capture and `GetItem` break.
+**Deferred: DOM fallback.** Opening each email via a selectors file (not built) and restoring its unread state would only be needed if both the list capture and `GetItem` break.
 
 **Both paths**
 - Read until reaching emails older than `last_processed_at`, deduped against `last_processed_ids`.
@@ -210,7 +210,7 @@ Each inbox email gets **two Outlook categories**: `MB: <category>` + `MB: P<prio
 - **Your own labels** (courses, professors, topics) (M6a ✅) use this same mechanism: see §3.8.
 
 ### 3.5 AI Fallback Agent (optional, off by default; M8, not built)
-Enabled with `FALLBACK_AGENT=on`. When a scripted step fails (selector not found or timeout):
+Not built. The idea: when a scripted step fails (selector not found or timeout):
 1. Capture a screenshot and the page's accessibility tree.
 2. Hand the single failed step to an AI browser agent (e.g. `browser-use`) with a narrow instruction ("Apply category 'MB: Urgent' to the selected email").
 3. Log the fallback event so the scripted selector can be fixed.
@@ -577,17 +577,14 @@ AI_DIGEST_MODEL=qwen3.8:27b
 
 # Browser: empty = local Chromium (default); set to use Browserless later
 BROWSER_WS_URL=
-FALLBACK_AGENT=off
 
 TELEGRAM_BOT_TOKEN=...
 SESSION_ENCRYPTION_KEY=...
-DATABASE_URL=sqlite:///data/mailbrief.db   # unused: there is no database (§4)
 DEFAULT_TIMEZONE=Asia/Singapore
 # When `mailbrief serve` runs: "<days> <HH:MM> [scope]; …" e.g. "daily 07:30; sun 20:00 this-week" (see commands.md §7)
 RUN_AT=daily 07:30
 # MB: labels (categories) on your emails in Outlook: on | off (commands.md §5)
 OUTLOOK_LABELS=on
-RESTORE_UNREAD=true             # DOM fallback only
 ARCHIVE_DAYS=0                  # 0 = keep saved emails forever; N = drop months older than N days
 
 # Images linked from email bodies (newsletters): downloaded for the AI, with safety checks.
@@ -698,7 +695,7 @@ Steps: [commands.md §7 "Hosting"](commands.md#7-running-automatically). This is
 | Strangers using the Telegram bot | Send-only bot; CLI-only destinations; group joins disabled |
 | Digest content on Telegram vs company policy | Summary-level digests; pluggable adapters (Email/Teams) |
 | Telegram message limits | Auto-split, priorities first |
-| Opening emails marks them read | Network path doesn't open emails; `RESTORE_UNREAD` on the DOM path |
+| Opening emails marks them read | The network path never opens emails |
 | An email steers a chat answer | Answer model has no tools; replies only to you; suggested files checked against cited emails; sources always shown so you can check |
 | Chat answers from stale data | Index updated every run; `/sync` runs now; sources show each email's date |
 | Too many custom labels clutter Outlook (M6a) | Labels only from your own rules; old courses removable with `labels clear --label` (or `--everywhere`); all share the `MB: ` prefix for filtering |
