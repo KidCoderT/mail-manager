@@ -316,7 +316,9 @@ def _serve(spec: str, schedule: list[dict]) -> int:
                 if complete or (attempts >= MAX_ATTEMPTS and not stopping.is_set()):
                     if not complete:
                         log(f"giving up on this slot after {MAX_ATTEMPTS} attempts; the next scheduled run goes ahead as normal")
-                    state["last_done"] = max(at for at, _ in due).isoformat()
+                    # done_now too: `due` holds only what was left for this attempt, and a slot that already
+                    # succeeded on an earlier attempt may be the latest one (else it would fire again)
+                    state["last_done"] = max(at for at, _ in [*due, *done_now]).isoformat()
                     retry_at, attempts, done_now = None, 0, set()
                 elif not stopping.is_set():  # stopping with work left: the next start catches up instead
                     retry_at = datetime.now(tz) + timedelta(seconds=RETRY_S)
