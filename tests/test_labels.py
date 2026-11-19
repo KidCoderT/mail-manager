@@ -117,6 +117,12 @@ def test_guard_refuses_everything_else():
     assert refused("UpdateMasterCategoryList", master_list_body(add=[("Red category", 0)]))  # not ours
     assert refused("UpdateMasterCategoryList", master_list_body(remove=["Project X"]))
     assert refused("ApplyCategoryOperation", remove_everywhere_body("Red category"))
+    other = remove_everywhere_body("MB: P1")
+    other["request"]["categoryOperation"]["Action"] = 2  # some other operation on one of ours: still refused
+    assert refused("ApplyCategoryOperation", other)
+    extra = remove_everywhere_body("MB: P1")
+    extra["request"]["categoryOperation"]["NewName"] = "x"
+    assert refused("ApplyCategoryOperation", extra)
 
 
 def test_master_categories_from_startup():

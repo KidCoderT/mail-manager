@@ -452,6 +452,8 @@ def check_request(action: str, body: dict) -> None:
                 or not names or not all(str(n).startswith(PREFIX) for n in names):
             raise UnsafeRequest("the category list may only gain or lose MailBrief (\"MB: \") categories")
     elif action == "ApplyCategoryOperation":
-        name = ((body.get("request") or {}).get("categoryOperation") or {}).get("CategoryName", "")
-        if not str(name).startswith(PREFIX):
+        op = (body.get("request") or {}).get("categoryOperation") or {}
+        # Action 1 (remove from every email) is the only operation MailBrief ever sends; the others
+        # aren't known to be harmless, so they don't pass just because the name is ours.
+        if op.get("Action") != 1 or set(op) - {"Action", "CategoryName"} or not str(op.get("CategoryName", "")).startswith(PREFIX):
             raise UnsafeRequest("only MailBrief (\"MB: \") categories can be removed everywhere")
