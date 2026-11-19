@@ -12,7 +12,7 @@
 <meta property="og:url" content="https://kidcodert.github.io/mail-manager/setup.html">
 <meta name="twitter:card" content="summary">
 <meta name="color-scheme" content="light dark">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2317212b'/%3E%3Crect x='5' y='10' width='22' height='15' rx='2' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3Cpath d='M6 12l10 7 10-7' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3Crect x='20' y='4' width='9' height='9' rx='2' fill='%2357d984'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2317212b'/%3E%3Crect x='5' y='10' width='22' height='15' rx='2' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3Cpath d='M6 12l10 7 10-7' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3Crect x='20' y='4' width='9' height='9' rx='2' fill='%23527cf0'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
 </head>
@@ -22,21 +22,10 @@
 <header class="top">
   <div class="wrap">
     <a class="brand" href="index.html" aria-label="MailBrief home">
-      <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="9" width="24" height="17" rx="3" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M4.5 11.5 15 19.5l10.5-8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><rect x="20" y="3" width="10" height="10" rx="2" fill="#57d984"/></svg>
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="9" width="24" height="17" rx="3" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M4.5 11.5 15 19.5l10.5-8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><rect x="20" y="3" width="10" height="10" rx="2" fill="#527cf0"/></svg>
       MailBrief
     </a>
-    <nav aria-label="Site">
-      <ul>
-        <li><a href="index.html#what">Overview</a></li>
-        <li><a href="index.html#how">Pipeline</a></li>
-        <li><a href="index.html#examples">Examples</a></li>
-        <li><a href="index.html#using">Using it</a></li>
-        <li><a href="index.html#privacy">Privacy</a></li>
-        <li><a href="index.html#limits">Limits</a></li>
-        <li><a class="cta" href="setup.html" aria-current="page">Setup</a></li>
-        <li><a href="https://github.com/KidCoderT/mail-manager">GitHub</a></li>
-      </ul>
-    </nav>
+    <nav aria-label="Site"><ul><li><a href="index.html#how">How it works</a></li><li><a href="index.html#examples">Examples</a></li><li><a href="index.html#privacy">Privacy &amp; limits</a></li><li><a href="setup.html" aria-current="page">Setup</a></li></ul></nav>
     <button class="theme" type="button" aria-label="Toggle light and dark theme" title="Toggle theme">
       <svg class="sun" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.2M12 19.8V22M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2 12h2.2M19.8 12H22M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></svg>
       <svg class="moon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg>
@@ -48,12 +37,12 @@
 <div class="wrap">
 
   <div class="page-head">
-    <h1>Set it up</h1>
-    <p class="intro">From <code>git clone</code> to your first digest in Telegram, then to a schedule that runs by itself. Follow the steps in order: two of them depend on what came before.</p>
+    <p class="eyebrow">Setup guide</p><h1>Your first digest,<br>step by step.</h1>
+    <p class="intro">Complete steps 1 to 7 to send your first digest. Backfill, scheduling and hosting are separate choices afterwards; none is required to try the first run.</p>
     <div class="note">
       <p><b>Before you start.</b> MailBrief is unofficial and uses an undocumented Outlook on the web interface. It sends your email text to the AI endpoint you configure, and summaries to Telegram. Check your organisation's IT acceptable-use policy first, and read the <a href="index.html#limits">limits</a> and <a href="index.html#privacy">privacy notes</a>.</p>
     </div>
-    <ol class="toc">
+    <h2 class="route-title">Start here: your first digest</h2><ol class="toc">
       <li><a href="#prereq">What you need</a></li>
       <li><a href="#install">Get the code and install</a></li>
       <li><a href="#env">Create <code>.env</code></a></li>
@@ -61,10 +50,11 @@
       <li><a href="#login">Sign in to Outlook</a></li>
       <li><a href="#destination">Register your chat</a></li>
       <li><a href="#first">Send the first digest</a></li>
-      <li><a href="#backfill">Backfill and build the index</a></li>
-      <li><a href="#always-on">Run it on a schedule</a></li>
-      <li><a href="#next">Make it yours</a></li>
-    </ol>
+    </ol><h2 class="route-title">After your first digest</h2><ul class="toc optional-toc">
+      <li><a href="#backfill">Optional: backfill and build the index</a></li>
+      <li><a href="#always-on">Scheduling and optional hosting</a></li>
+      <li><a href="#next">Optional: custom labels</a></li>
+    </ul>
   </div>
 
   <ol class="steps">
@@ -76,7 +66,7 @@
           <li><b>A Microsoft 365 work or school account</b> whose mail you read in Outlook on the web. Personal Outlook.com accounts are not supported.</li>
           <li><b>A computer you sign in from normally.</b> Do the setup on the machine that will run the daily job: moving a saved session between machines or networks often forces a new sign-in.</li>
           <li><b><a href="https://git-scm.com/">git</a> and <a href="https://docs.astral.sh/uv/">uv</a>.</b> uv manages the Python environment and installs Python 3.11 for the project if you do not have it.</li>
-          <li><b>An OpenAI-compatible AI endpoint</b> and a key for it: one your organisation runs, a hosted provider, or a local server such as Ollama. It must offer:
+          <li><b>An OpenAI-compatible AI endpoint</b> and a key if it requires authentication: one your organisation runs, a hosted provider, or a local server such as Ollama. It must offer:
             <ul>
               <li>a chat model (classifying, digests, answers),</li>
               <li>a model that accepts images (posters and screenshots in emails; this can be the same model),</li>
@@ -221,9 +211,12 @@ ARCHIVE_DAYS=0</pre></div>
       </div>
     </li>
 
+  </ol>
+  <div class="after-first"><h2>After your first digest</h2><p>You can stop here and run MailBrief manually. Use the options below for older mail, automatic delivery or your own labels.</p></div>
+  <ol class="steps optional-steps" start="8">
     <li id="backfill">
       <div>
-        <h2>Backfill and build the index</h2>
+        <p class="eyebrow">Optional / older mail</p><h2>Backfill and build the index</h2>
         <p>So far MailBrief only knows the last day of mail. To let the chat answer questions about older email, save the whole inbox once, then build the search index.</p>
         <div class="code"><pre>uv run mailbrief run --backfill
 uv run mailbrief index rebuild</pre></div>
@@ -256,8 +249,8 @@ uv run mailbrief status</pre></div>
 uv run mailbrief stop
 uv run mailbrief autostart off</pre></div>
 
-        <h3>In Docker, on a server of your own</h3>
-        <p>The repository has a <code>Dockerfile</code> and a <code>compose.yaml</code> that run the same <code>serve</code> as a non-root user and restart it after crashes and reboots. The simplest route is to finish steps 1 to 8 on your PC, then move the result:</p>
+        <details class="hosting-details" id="hosting"><summary>Optional: host on your own server with Docker</summary><div class="detail-body"><h3>In Docker, on a server of your own</h3>
+        <p>The repository has a <code>Dockerfile</code> and a <code>compose.yaml</code> that run the same <code>serve</code> as a non-root user and restart it after crashes and reboots. The simplest route is to finish steps 1 to 7 on your PC (and step 8 if you want older mail), then move the result:</p>
         <ol>
           <li>Clone the repository on the server.</li>
           <li>Copy your <code>.env</code> and your <code>data/</code> folder into it. The <code>SESSION_ENCRYPTION_KEY</code> must be the same one that encrypted the data.</li>
@@ -272,7 +265,7 @@ docker compose down</pre></div>
           <li><code>.env</code> and <code>data/</code> are passed in at run time and are not baked into the image. The image needs about 2 GB of disk.</li>
           <li>Microsoft may ask you to sign in again when the session shows up from a new machine or network. A server has no screen, so that sign-in goes through <code>/login</code> in Telegram, which needs the <code>ports:</code> line in <code>compose.yaml</code> uncommented and <code>PUBLIC_URL</code> set to an <code>https://</code> address that reaches it (a reverse proxy or tunnel with TLS). The details are in <a href="https://github.com/KidCoderT/mail-manager/blob/main/commands.md#2-mailbrief-login">commands.md, section 2</a>.</li>
           <li>A rented cloud host holds your archive, your session and the key that decrypts them. Treat that as handing your mail to a third party, and check your organisation's policy before choosing it.</li>
-        </ul>
+        </ul></div></details>
       </div>
     </li>
 

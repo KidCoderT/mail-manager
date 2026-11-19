@@ -12,7 +12,7 @@
 <meta property="og:url" content="https://kidcodert.github.io/mail-manager/">
 <meta name="twitter:card" content="summary">
 <meta name="color-scheme" content="light dark">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2317212b'/%3E%3Crect x='5' y='10' width='22' height='15' rx='2' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3Cpath d='M6 12l10 7 10-7' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3Crect x='20' y='4' width='9' height='9' rx='2' fill='%2357d984'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2317212b'/%3E%3Crect x='5' y='10' width='22' height='15' rx='2' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3Cpath d='M6 12l10 7 10-7' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3Crect x='20' y='4' width='9' height='9' rx='2' fill='%23527cf0'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
 </head>
@@ -22,22 +22,10 @@
 <header class="top">
   <div class="wrap">
     <a class="brand" href="index.html" aria-label="MailBrief home">
-      <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="9" width="24" height="17" rx="3" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M4.5 11.5 15 19.5l10.5-8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><rect x="20" y="3" width="10" height="10" rx="2" fill="#57d984"/></svg>
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="9" width="24" height="17" rx="3" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M4.5 11.5 15 19.5l10.5-8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><rect x="20" y="3" width="10" height="10" rx="2" fill="#527cf0"/></svg>
       MailBrief
     </a>
-    <nav aria-label="Sections">
-      <ul>
-        <li><a href="#what">Overview</a></li>
-        <li><a href="#how">Pipeline</a></li>
-        <li><a href="#examples">Examples</a></li>
-        <li><a href="#using">Using it</a></li>
-        <li><a href="#privacy">Privacy</a></li>
-        <li><a href="#limits">Limits</a></li>
-        <li><a href="#faq">FAQ</a></li>
-        <li><a class="cta" href="setup.html">Setup</a></li>
-        <li><a href="https://github.com/KidCoderT/mail-manager">GitHub</a></li>
-      </ul>
-    </nav>
+    <nav aria-label="Site"><ul><li><a href="#how">How it works</a></li><li><a href="#examples">Examples</a></li><li><a href="#privacy">Privacy &amp; limits</a></li><li><a href="setup.html">Setup</a></li></ul></nav>
     <button class="theme" type="button" aria-label="Toggle light and dark theme" title="Toggle theme">
       <svg class="sun" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.2M12 19.8V22M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2 12h2.2M19.8 12H22M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></svg>
       <svg class="moon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg>
@@ -49,60 +37,40 @@
 
 <!-- ════════════════════════════ hero ════════════════════════════ -->
 <section class="hero">
-  <div class="wrap">
-    <div class="hero-intro">
-      <div>
-        <p class="prompt-line"><span>~/mailbrief</span> <b>$</b> cat README</p>
-        <h1>A quieter inbox.<br>A single command<span class="cur" aria-hidden="true">_</span></h1>
-      </div>
-      <div class="hero-about">
-        <p class="lede">From your terminal to your Telegram. MailBrief reads, sorts and summarises your Outlook mail, on a schedule you control.</p>
-        <div class="actions">
-          <a class="btn primary" href="setup.html">Get started</a>
-          <a class="btn" href="#examples">Explore output</a>
-        </div>
-        <p class="hero-meta">Python &middot; Microsoft 365 &middot; Self-hosted &middot; MIT</p>
-      </div>
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow">Your Outlook inbox, with perspective</p>
+      <h1>Start your day <br>with the mail <br>that matters.</h1>
+      <p class="lede">A morning digest, useful labels and answers from your email. MailBrief runs on your own machine and brings your Microsoft 365 inbox to Telegram.</p>
+      <p>For students and staff comfortable with a terminal. One person, one mailbox, and an AI endpoint you choose.</p>
+      <a class="btn primary" href="setup.html">Set up your first digest <span aria-hidden="true">&rarr;</span></a>
+      <p class="hero-constraints">Work or school Microsoft 365 accounts only. No personal Outlook.com or Gmail. Self-hosted; no hosted service.</p>
+      <p class="hero-disclosure">Email text goes to your AI provider; summaries and requested content go to Telegram. <a href="#privacy">Privacy &amp; limits</a></p>
     </div>
-
-    <div class="shell scene" aria-label="Illustrated MailBrief terminal session with invented mail">
-      <div class="shell-bar"><span><b aria-hidden="true">&gt;_</b> mailbrief / morning-run</span><span class="shell-hint">illustrative session</span></div>
-      <div class="shell-grid">
-        <div class="shell-session">
-          <p class="shell-command"><span>you@localhost</span> <span class="shell-path">~/mailbrief</span><br><b>$</b> uv run mailbrief run --send --commit</p>
-          <p class="shell-comment"># A morning run, from inbox to brief.</p>
-          <ol class="run-log" aria-label="Example run stages">
-            <li><span class="log-state">[ok]</span><div>Read Outlook inbox<small>9 new emails &middot; full text retrieved</small></div></li>
-            <li><span class="log-state">[ok]</span><div>Classify with your AI<small>Urgent 1 &middot; Needs Reply 2 &middot; FYI 4 &middot; Newsletter 2</small></div></li>
-            <li><span class="log-state">[ok]</span><div>Save &amp; label<small>Encrypted archive &middot; MB: categories applied</small></div></li>
-            <li><span class="log-state">[ok]</span><div>Deliver to Telegram<small>Morning digest + upcoming events</small></div></li>
-          </ol>
-          <div class="shell-result"><span>&#10003;</span> Done. Your morning, back to you.</div>
-          <p class="shell-prompt" aria-hidden="true"><b>$</b> <span class="cursor-block"></span></p>
-        </div>
-        <div class="shell-output">
-          <div class="output-label"><span>OUTPUT / TELEGRAM</span><a href="#examples">View examples &#8599;</a></div>
-          <div class="brief-heading"><span>09</span><div>new emails<small>One morning brief.</small></div></div>
-          <div class="brief-item"><span class="brief-tag">01 / PRIORITY</span><p>Housing deposit due Friday.</p><small>Housing Office &middot; Action needed</small></div>
-          <div class="brief-item"><span class="brief-tag">02 / REPLY</span><p>Confirm your seminar slot.</p><small>Dr Vastari &middot; Reply by Thursday</small></div>
-          <div class="brief-item"><span class="brief-tag">03 / UPCOMING</span><p>Engineering talk, Thursday at 14:00.</p><small>Careers Office &middot; Innovation Hall</small></div>
-          <p class="output-note">Invented mail. Real workflow. <a href="#privacy">See where your data goes.</a></p>
-        </div>
+    <figure class="scene preview">
+      <div class="preview-bar"><span class="app-mark" aria-hidden="true">M</span><b>MailBrief</b><span>Telegram preview</span></div>
+      <div class="preview-body">
+        <p class="preview-date">Tuesday 10 November 2026 &middot; 07:31</p>
+        <h2>Your morning, in brief.</h2>
+        <p class="preview-tally">9 new emails &middot; FYI 3 &middot; Newsletter 2<br>Needs Reply 2 &middot; Urgent 1 &middot; Meetings 1</p>
+        <div class="brief-item"><span class="brief-tag">Needs attention</span><h3>Housing deposit due Friday</h3><p>Pay the spring deposit of 400 by 13 Nov. Unpaid rooms are released after that.</p></div>
+        <div class="brief-item"><span class="brief-tag">Needs a reply</span><h3>Choose your seminar week</h3><p>Dr Imogen Vastari asks: week 9 or week 10? Reply by Thursday.</p></div>
+        <div class="brief-item"><span class="brief-tag">Coming up</span><h3>Orbital Labs engineering talk</h3><p>Thu 12 Nov, 6:30pm &middot; Engineering Hall E2.<br>Talk + CV clinic. Sign up by Wednesday.</p></div>
+        <a class="text-link" href="#examples">Explore the full output <span aria-hidden="true">&rarr;</span></a>
       </div>
-      <div class="shell-status"><span><i aria-hidden="true"></i> YOUR MACHINE</span><span>Outlook &rarr; AI &rarr; Telegram</span><span>read &middot; classify &middot; deliver</span></div>
-    </div>
-    <p class="hero-footnote">Your mailbox stays yours. MailBrief only changes its own labels. <a href="#limits">Read the limits</a></p>
+      <figcaption>Illustrated output using fictional mail. No live mailbox is connected.</figcaption>
+    </figure>
   </div>
 </section>
 
 <!-- ════════════════════════════ what ════════════════════════════ -->
 <section id="what">
   <div class="wrap">
-    <h2>What it is, and who it is for</h2>
+    <h2>Less sorting. More knowing what needs you.</h2>
     <div class="cols wide-left">
       <div>
-        <p class="intro">A university or work inbox mixes three things: the few emails that need you today, a steady stream of announcements, and newsletters with an event buried in the fourth paragraph. Sorting that by hand every morning takes time, and the costly mistakes are the quiet ones: a deadline you scrolled past, a professor still waiting for an answer.</p>
-        <p>MailBrief does the first pass for you. It is a Python command-line tool you run yourself, for your own mailbox. It is aimed at students and staff with a Microsoft 365 account who are comfortable with a terminal and already have, or can get, an AI endpoint they trust with their email text.</p>
+        <p class="intro">Catch the deadline buried in a newsletter, see who needs a reply, and find an answer without searching thread after thread.</p>
+        <details><summary>Who it is for</summary><p>A university or work inbox mixes urgent mail, announcements and newsletters. MailBrief is a Python command-line tool for students and staff with a Microsoft 365 account who are comfortable with a terminal and have an AI endpoint they trust with email text.</p></details>
         <h3>What it does</h3>
         <ul class="features">
           <li><b>Classifies every new email</b> One of six categories (Urgent, Needs Reply, Meetings, FYI, Newsletter, Low Priority) with a priority from P1 to P5, a one-line summary, action items and a deadline.</li>
@@ -130,8 +98,14 @@
 <section id="how">
   <div class="wrap">
     <h2>How it works</h2>
-    <p class="intro">Five steps, all started from your machine. The table shows each step and exactly what crosses to the three outside services: Outlook on the web, the AI endpoint you configure, and Telegram.</p>
+    <p class="intro">Run it from a terminal, or keep its service running for scheduled digests and Telegram chat. Outlook, your AI endpoint and Telegram each receive the data described below.</p>
 
+    <ol class="workflow">
+      <li><span>01</span><h3>Read &amp; classify</h3><p>Your local browser reads Outlook. Your AI endpoint finds priorities, actions and events.</p></li>
+      <li><span>02</span><h3>Label &amp; deliver</h3><p>MailBrief applies its own Outlook categories and sends a digest and calendar to Telegram.</p></li>
+      <li><span>03</span><h3>Ask &amp; follow up</h3><p>Ask about saved mail. Get answers with quotes, source links and requested attachments.</p></li>
+    </ol>
+    <details class="wide-details"><summary>See all five steps, data flows and local storage</summary><div class="detail-body">
     <figure>
       <div class="lanes">
         <div class="lane-head" aria-hidden="true">
@@ -185,7 +159,7 @@
       <div><code>data/rules.json</code>Your own labels and profile. Plain JSON. <small>No email content.</small></div>
       <div><code>data/logs/</code>Service log: progress, counts, timings. <small>Never subjects, digests, questions or answers.</small></div>
       <div><code>.env</code>Your keys and settings. <small>Holds the encryption key, so encryption protects copies of <code>data/</code>, not someone already logged in as you.</small></div>
-    </div>
+    </div></div></details>
   </div>
 </section>
 
@@ -193,7 +167,7 @@
 <section id="examples">
   <div class="wrap">
     <h2>What it produces</h2>
-    <p class="intro">These are mock-ups in the real message formats. Every sender, course, subject and address in them is invented.</p>
+    <p class="intro">These are mock-ups in the real message formats. Every sender, course, subject and address in them is invented. The morning examples are set on 10 November 2026; the housing-payment chat is a follow-up on 11 November.</p>
     <p>Try the real archive and events views without an account: after <code>uv sync</code>, run <code>uv run python demo/run.py</code> or <code>uv run python demo/run.py events</code>. The offline tour uses 15 invented emails in a temporary folder. Its digest and chat views are prewritten examples.</p>
 
     <div role="tablist" aria-label="Examples of MailBrief output">
@@ -232,11 +206,11 @@ OPPORTUNITIES &amp; EVENTS
 ⭐ Orbital Labs engineering talk with a CV clinic, Thu 12 Nov 6:30pm; sign up by Wednesday <span class="lnk">↗</span>
 
 FYI
-• Library: one loan is due back in 3 days <span class="lnk">↗</span>
+• Library: one loan is due back Thu 12 Nov <span class="lnk">↗</span>
 • STAT310: the midterm seating plan is posted <span class="lnk">↗</span><time>07:31</time></div>
           </div>
         </div>
-        <aside>
+        <aside><p class="example-summary">A short, linked digest puts priorities, replies and deadlines first.</p><details><summary>How this output works</summary><div class="detail-body">
           <ul>
             <li>The first line is built by code: the count, then a tally per category.</li>
             <li>The sections are fixed: top priorities, needs a reply, deadlines and meetings, opportunities and events, FYI. Empty ones are skipped.</li>
@@ -247,7 +221,7 @@ FYI
             <li>A digest too long for one message is sent as one message per section, each tagged like <code>2/4</code>.</li>
             <li>Weekly and monthly digests use different sections: STILL OPEN, DEADLINES &amp; MEETINGS, KEY EVENTS, NOISE.</li>
           </ul>
-        </aside>
+        </div></details></aside>
       </div>
     </div>
 
@@ -280,7 +254,7 @@ DATE NOT GIVEN
    Campus Weekly is looking for student guides<time>07:31</time></div>
           </div>
         </div>
-        <aside>
+        <aside><p class="example-summary">A rolling calendar brings dated events out of your saved email.</p><details><summary>How this output works</summary><div class="detail-body">
           <ul>
             <li>Sent as a second message after every digest. Built by code from the saved classifications, so nothing in it is rewritten or made up at this stage.</li>
             <li>It covers all saved mail, not only today's: every event in the next <code>EVENTS_DAYS</code> days (default 14; <code>0</code> turns it off).</li>
@@ -290,7 +264,7 @@ DATE NOT GIVEN
             <li>Events are also read from images: posters pasted into an email, and images a newsletter links to.</li>
             <li>Any time: <code>mailbrief events</code> prints it, <code>/events 30</code> asks the bot for 30 days.</li>
           </ul>
-        </aside>
+        </div></details></aside>
       </div>
     </div>
 
@@ -322,7 +296,7 @@ DATE NOT GIVEN
 <span class="src">05 Nov · STAT310 Teaching Team · STAT310 midterm logistics</span>
 <span class="src">06 Nov · Prof Tobias Quillfeather · Re: notes sheet question</span><time>13:41</time></div>
 </div>
-<div class="ex" data-exchange="did I pay my housing deposit?">
+<div class="ex" data-exchange="did I pay my housing deposit?"><p class="conversation-date">Wednesday 11 November &middot; after the receipt arrived</p>
 <div class="msg out">did I pay my housing deposit?<time>18:05</time></div>
 <div class="msg">• It looks paid. The Housing Office reminded you that the "spring deposit of 400" is due by "Friday 13 November" <span class="lnk">↗</span>
 • A receipt from Student Payments the next day confirms "payment received: 400.00, spring housing deposit" <span class="lnk">↗</span>
@@ -343,7 +317,7 @@ DATE NOT GIVEN
 </div>
           </div>
         </div>
-        <aside>
+        <aside><p class="example-summary">Ask in plain words and follow the sources back to Outlook.</p><details><summary>How this output works</summary><div class="detail-body">
           <ul>
             <li>Ask in plain words. Follow-ups work: the last three questions and answers are remembered, in memory only. <code>/new</code> forgets them.</li>
             <li>Answers come only from your saved emails. Every claim carries a ↗ to its email, and exact wording is quoted where it matters.</li>
@@ -353,7 +327,7 @@ DATE NOT GIVEN
             <li>Typical answers take 3 to 30 seconds. Broad questions over many emails can take a minute or more.</li>
             <li>The same thing works without Telegram: <code>mailbrief chat "when is the STAT310 midterm?"</code></li>
           </ul>
-        </aside>
+        </div></details></aside>
       </div>
     </div>
 
@@ -373,7 +347,7 @@ Tap Start, then sign in as usual. After Start, the link only works in that brows
 <div class="msg">Logged in ✅ The sign-in page is closed. Digests carry on as scheduled.<time>08:15</time></div>
           </div>
         </div>
-        <aside>
+        <aside><p class="example-summary">An expired session triggers an alert with ways to sign in again.</p><details><summary>How this output works</summary><div class="detail-body">
           <ul>
             <li>Microsoft ends web sessions from time to time. How often is set by your organisation. MailBrief notices at the next run and tells you, once a day.</li>
             <li>At a PC, the fix is <code>mailbrief login</code>: a browser window opens and you sign in as usual.</li>
@@ -381,7 +355,7 @@ Tap Start, then sign in as usual. After Start, the link only works in that brows
             <li>For the link to open on a phone, MailBrief needs an <code>https://</code> address (<code>PUBLIC_URL</code>) or the optional tunnel (<code>LOGIN_TUNNEL=cloudflared</code>). Without either, the link is a <code>localhost</code> one that only opens on the machine itself.</li>
             <li>The safeguards on that page are listed under <a href="#privacy">Privacy</a>.</li>
           </ul>
-        </aside>
+        </div></details></aside>
       </div>
     </div>
 
@@ -403,17 +377,18 @@ Tap Start, then sign in as usual. After Start, the link only works in that brows
                 <span class="chips"><span class="chip c-green">MB: Newsletter</span><span class="chip c-orange">MB: P2</span><span class="chip c-cranberry">MB: Careers</span></span></li>
               <li class="read"><span class="from">Petra Lindqvist</span><span class="when">Mon 16:30</span><span class="subj">Project meeting Thursday 2pm, Library Pod 3</span>
                 <span class="chips"><span class="chip c-purple">MB: Meetings</span><span class="chip c-yellow">MB: P3</span></span></li>
-              <li class="read"><span class="from">Lumen Lab</span><span class="when">Mon 14:11</span><span class="subj">Summer studentships: applications open</span>
-                <span class="chips"><span class="chip c-blue">MB: FYI</span><span class="chip c-orange">MB: P2</span><span class="chip c-darkgreen">MB: Research</span></span></li>
-              <li class="read"><span class="from">Library Services</span><span class="when">Mon 09:03</span><span class="subj">Your loan is due in 3 days</span>
-                <span class="chips"><span class="chip c-blue">MB: FYI</span><span class="chip c-teal">MB: P4</span></span></li>
+              <li class="read"><span class="from">STAT310 Teaching Team</span><span class="when">Mon 16:02</span><span class="subj">Midterm seating plan posted</span><span class="chips"><span class="chip c-blue">MB: FYI</span><span class="chip c-orange">MB: P2</span><span class="chip c-darkblue">MB: STAT310</span></span></li>
+              <li class="read"><span class="from">BIO204 Teaching Team</span><span class="when">Mon 14:11</span><span class="subj">BIO204 lab report 2 due Wednesday</span>
+                <span class="chips"><span class="chip c-blue">MB: FYI</span><span class="chip c-orange">MB: P2</span><span class="chip c-darkblue">MB: BIO204</span></span></li>
               <li class="read"><span class="from">Campus Weekly</span><span class="when">Mon 12:00</span><span class="subj">This week at Harrowmere</span>
                 <span class="chips"><span class="chip c-green">MB: Newsletter</span><span class="chip c-grey">MB: P5</span></span></li>
+              <li class="read"><span class="from">Library Services</span><span class="when">Mon 09:03</span><span class="subj">Your loan is due Thu 12 Nov</span>
+                <span class="chips"><span class="chip c-blue">MB: FYI</span><span class="chip c-teal">MB: P4</span></span></li>
             </ol>
           </div>
           <figcaption>A drawing of a message list, not a screenshot. In Outlook the labels appear as ordinary categories.</figcaption>
         </figure>
-        <aside>
+        <aside><p class="example-summary">Category and priority labels stay visible in Outlook on web, desktop and phone.</p><details><summary>How this output works</summary><div class="detail-body">
           <p>Each inbox email gets two labels, a category and a priority, plus any of your own.</p>
           <div class="table"><table>
             <thead><tr><th>Category</th><th>Priority</th></tr></thead>
@@ -433,7 +408,7 @@ Tap Start, then sign in as usual. After Start, the link only works in that brows
             <li>Read state, folder and flags stay as they were. Senders are not notified.</li>
             <li>To undo everything: <code>mailbrief labels clear --all --colours</code>.</li>
           </ul>
-        </aside>
+        </div></details></aside>
       </div>
     </div>
 
@@ -444,7 +419,7 @@ Tap Start, then sign in as usual. After Start, the link only works in that brows
         <figure>
           <div class="term">
             <div class="term-bar">mail-manager</div>
-<pre><span class="p">$</span> uv run mailbrief run
+<pre><span class="prompt">$</span> uv run mailbrief run
 <span class="d">[00:00]</span> Loading saved emails…
 <span class="d">[00:03]</span> Opening Outlook…
 <span class="d">[00:03]</span> Signed in
@@ -478,14 +453,14 @@ Saved (encrypted): 2026-11.enc in data\archive  (view with `mailbrief emails`)</
           </div>
           <figcaption>Shortened. A plain <code>run</code> prints the digest and marks nothing as processed, so it is safe to repeat.</figcaption>
         </figure>
-        <aside>
+        <aside><p class="example-summary">The terminal shows each phase of a run, with progress and timings.</p><details><summary>How this output works</summary><div class="detail-body">
           <ul>
             <li>Each phase reports progress with the time since the start, so a slow step is visible instead of looking stuck.</li>
             <li>Add <code>--send</code> to deliver the digest to Telegram and <code>--commit</code> to mark these emails as processed. Together they are the daily job.</li>
             <li><code>--commit</code> refuses to advance if the digest reached no destination, so a failed delivery never loses a morning's mail.</li>
             <li>Scheduled runs use <code>--quiet</code>, which leaves subjects and digest text out of the log.</li>
           </ul>
-        </aside>
+        </div></details></aside>
       </div>
     </div>
   </div>
@@ -494,9 +469,13 @@ Saved (encrypted): 2026-11.enc in data\archive  (view with `mailbrief emails`)</
 <!-- ════════════════════════════ using ════════════════════════════ -->
 <section id="using">
   <div class="wrap">
-    <h2>Using it</h2>
-    <p class="intro">Once it is set up you mostly leave it alone. These are the commands you will actually reach for. Run them from the project folder with <code>uv run</code>. The full list is in the <a href="https://github.com/KidCoderT/mail-manager/blob/main/commands.md">command reference</a>.</p>
+    <h2>Get your first digest. Then make it yours.</h2>
+    <p class="intro">Start with one digest on your own machine. Then choose whether to add older mail, custom labels or a daily schedule.</p>
 
+    <div class="setup-callout"><div><p class="eyebrow">From install to first digest</p><h3>Try it on your own inbox.</h3><p>Install, choose your AI endpoint, connect Outlook and register your Telegram chat. Send your first digest before any optional backfill.</p></div><a class="btn primary" href="setup.html">Follow the setup guide</a></div>
+    <p>Allow about half an hour for setup, including the bot and browser download. Scheduling, older-mail backfill and hosting come afterwards.</p>
+    <details class="wide-details" id="everyday"><summary>Everyday commands, custom labels and schedules</summary><div class="detail-body">
+    <p>Once it is set up you mostly leave it alone. These are the commands you will actually reach for. Run them from the project folder with <code>uv run</code>. The full list is in the <a href="https://github.com/KidCoderT/mail-manager/blob/main/commands.md">command reference</a>.</p>
     <div class="cols">
       <div>
         <h3>In the terminal</h3>
@@ -602,9 +581,7 @@ uv run mailbrief serve --at "daily 07:30; sun 20:00 this-week"</pre></div>
       </div>
     </div>
 
-    <h3>Getting started</h3>
-    <p>Setup takes about half an hour, most of it creating the Telegram bot and waiting for a browser download. The guide goes from <code>git clone</code> to your first digest, then to running it on a schedule.</p>
-    <p><a class="btn primary" href="setup.html">Open the setup guide</a></p>
+</div></details>
   </div>
 </section>
 
@@ -612,8 +589,9 @@ uv run mailbrief serve --at "daily 07:30; sun 20:00 this-week"</pre></div>
 <section id="privacy">
   <div class="wrap">
     <h2>Privacy and safety, stated plainly</h2>
-    <p class="intro">MailBrief handles your email, so here is what it does with it, including the parts that are not private.</p>
+    <p class="intro">Self-hosted does not mean all data stays local. Email text and images go to your AI endpoint; bot messages go to Telegram. Read these disclosures before connecting your mailbox.</p>
 
+    <div class="privacy-summary"><p><b>Provider policies apply.</b> AI retention is up to your provider. Telegram bot chats are not end-to-end encrypted.</p><p><b>Protect the machine and its keys.</b> A saved session grants mailbox access. Encryption does not protect against someone logged in as you who can read <code>.env</code>.</p><p><b>Check permission first.</b> The Outlook interface is undocumented and may break or be blocked. Your organisation may prohibit this automation or sharing mail with AI and Telegram.</p></div>
     <ul class="facts-list">
       <li><details><summary>The browser is local.</summary><p>Mail is read by a Chromium that runs on your machine, using the Outlook web session you already have. No app registration is needed, and no MailBrief server sits in the middle, because there is none.</p></details></li>
       <li><details><summary>It only adds labels.</summary><p>The one change MailBrief makes in your mailbox is setting its own <code>MB:</code> categories. Every request to Outlook passes a check in code first; anything that would move, delete, send, mark as read or create a rule is refused before it leaves your machine. There is no delete code path.</p></details></li>

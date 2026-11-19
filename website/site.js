@@ -5,6 +5,20 @@
   var root = document.documentElement;
   root.classList.add("js");
 
+  // Deep links to the command reference must also open its containing details.
+  function revealHash() {
+    var id;
+    try { id = decodeURIComponent(location.hash.slice(1)); } catch (e) { return; }
+    var target = document.getElementById(id);
+    if (!target) return;
+    for (var parent = target.parentElement; parent; parent = parent.parentElement) {
+      if (parent.tagName === "DETAILS") parent.open = true;
+    }
+    if (target.tagName === "DETAILS") target.open = true;
+  }
+  window.addEventListener("hashchange", revealHash);
+  revealHash();
+
   // ── theme toggle: the <head> script already applied the saved choice ──
   document.querySelectorAll(".theme").forEach(function (btn) {
     btn.addEventListener("click", function () {

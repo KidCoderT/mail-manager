@@ -58,6 +58,8 @@ def check():
                                 page.locator(".theme").click()
                                 flipped = {"light": "dark", "dark": "light"}[theme]
                                 assert page.evaluate("[document.documentElement.dataset.theme, localStorage.theme]") == [flipped, flipped]
+                                page.reload()
+                                assert page.evaluate("document.documentElement.dataset.theme") == flipped
                                 page.evaluate("localStorage.clear()")
                                 for tab in page.get_by_role("tab").all():
                                     tab.click()
@@ -74,9 +76,17 @@ def check():
                                             button.click()
                                     page.wait_for_timeout(30)
                                     assert page.locator(".typing").count() == 0
-                                if page.locator(".code button").count():
-                                    page.locator(".code button").first.click()
-                                    expect(page.locator(".code button").first).to_have_text(re.compile("Copied|Select and copy"))
+                                if name == "index.html":
+                                    page.evaluate("location.hash = 'labels'")
+                                    expect(page.locator("#everyday")).to_have_attribute("open", "")
+                                for summary in page.locator("details > summary").all():
+                                    if summary.is_visible() and summary.locator("..").get_attribute("open") is None:
+                                        summary.click()
+                                assert page.locator("body").evaluate("e => e.scrollWidth <= innerWidth"), (name, "expanded", width)
+                                if page.locator(".code button:visible").count():
+                                    copy = page.locator(".code button:visible").first
+                                    copy.click()
+                                    expect(copy).to_have_text(re.compile("Copied|Select and copy"))
                             else:
                                 assert page.locator("[role=tabpanel][hidden]").count() == 0
                             assert not errors, errors
