@@ -107,14 +107,22 @@ def open_outlook(page, timeout_s: int = 60) -> dict:
     page.goto(INBOX_URL, wait_until="domcontentloaded")
 
     # Wait for either the message list or a redirect to the Microsoft login page.
+    loaded = False
     for _ in range(timeout_s * 2):
         if (urlparse(page.url).hostname or "") in LOGIN_HOSTS:
             progress.step("Session expired (redirected to the Microsoft login page)")
             return {"expired": True, "auth": auth, "startup": []}
         if page.locator(MESSAGE_ROW).count():
+            loaded = True
             break
         page.wait_for_timeout(500)
-    progress.step("Signed in")
+    host = urlparse(page.url).hostname or ""
+    if not loaded and not host.startswith("outlook."):
+        # Parked somewhere that isn't Outlook: an organisation's own sign-in page, a consent or "stay signed in?"
+        # screen. That is a sign-in to finish, not an empty inbox.
+        progress.step("Session expired (Outlook sent the browser to a sign-in page)")
+        return {"expired": True, "auth": auth, "startup": []}
+    progress.step("Signed in" if loaded else f"Outlook opened, but no message list after {timeout_s}s (slow network, or an empty inbox)")
     page.wait_for_timeout(3000)  # let the list's follow-up requests finish (and auth be captured)
     startup = []
     for r in startup_responses:
