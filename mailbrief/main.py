@@ -1101,7 +1101,17 @@ def add_destination(type_: str, chat_id: str | None) -> int:
         destinations.add("telegram", chat_id, chat_id)
         print(f"Added Telegram chat {chat_id}.")
         return 0
-    chats = telegram.find_chats()
+    try:
+        chats = telegram.find_chats()
+    except telegram.TelegramError as e:
+        if str(e).startswith("409"):  # Telegram allows one reader: `serve` (or `bot`) is listening for chat
+            print("MailBrief is running and already reading your bot's messages. Stop it first (`mailbrief stop`), "
+                  "add the chat, then start it again. Or skip the lookup: --chat-id <id>.")
+        elif str(e).startswith("401"):
+            print("Telegram doesn't accept TELEGRAM_BOT_TOKEN: copy it again from @BotFather into .env.")
+        else:
+            print(f"Couldn't ask Telegram for your chats: {e}")
+        return 1
     if not chats:
         print(
             "No chats found. Send your bot a message in Telegram first, then run this again."
@@ -1115,7 +1125,11 @@ def add_destination(type_: str, chat_id: str | None) -> int:
         return 1
     chat = chats[int(choice) - 1]
     destinations.add("telegram", chat["id"], chat["label"])
-    telegram.send(chat["id"], "✅ MailBrief will send your morning digest here.")
+    try:
+        telegram.send(chat["id"], "✅ MailBrief will send your morning digest here.")
+    except telegram.TelegramError as e:  # the chat is saved either way: the next digest tries again
+        print(f"Added {chat['label']}, but the test message didn't go through ({e}).")
+        return 0
     print(f"Added {chat['label']} and sent a test message.")
     return 0
 
