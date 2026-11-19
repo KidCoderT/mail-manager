@@ -865,6 +865,7 @@ uv add <package>      # updates pyproject.toml + uv.lock and installs it
 | `SESSION_ENCRYPTION_KEY` | *(required)* | Encrypts `session.enc` and archive `.enc` files |
 | `AI_BASE_URL` | *(none: required)* | The OpenAI-compatible endpoint your email text is sent to, e.g. `http://localhost:11434/v1` |
 | `AI_API_KEY` | *(none)* | The endpoint's key, if authentication is required; leave empty for a keyless local server |
+| `AI_CHAT_TEMPLATE_KWARGS` | `off` | Set `on` only for Qwen/Ollama servers that accept `chat_template_kwargs.enable_thinking`; strict OpenAI-compatible endpoints should keep it off |
 | `AI_CLASSIFIER_MODEL` | `qwen3.6:35b` | Classifies text-only emails |
 | `AI_VISION_MODEL` | `qwen3.6:35b` | Classifies emails with image attachments |
 | `AI_DIGEST_MODEL` | `qwen3.8:27b` | Writes the digest (thinking on) |

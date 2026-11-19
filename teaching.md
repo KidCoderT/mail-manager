@@ -634,7 +634,7 @@ context_lines(email, thread):
 function complete(model, messages, thinking=false, max_tokens):
     endpoint ← AI_BASE_URL (required), key ← AI_API_KEY
     body ← {model, messages, temperature 0, max_tokens,
-            chat_template_kwargs: {enable_thinking: thinking}}
+            chat_template_kwargs: {enable_thinking: thinking}}  # only if AI_CHAT_TEMPLATE_KWARGS=on
     POST to AI_BASE_URL/chat/completions
     wait for an answer at most 300 s if thinking, else 120 s
     on 429 (rate limited) or 5xx:
