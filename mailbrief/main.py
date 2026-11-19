@@ -1165,21 +1165,96 @@ def _explain(e: Exception) -> str | None:
     return None
 
 
+PERIOD_HELP = "which saved emails, by when they arrived"
+EXAMPLES = {
+    "login": "mailbrief login              a browser window opens: sign in, then press Enter here\n"
+             "mailbrief login --remote     on a server: prints a one-time link to sign in from your phone",
+    "run": "mailbrief run                      classify, save, label and print the digest (not sent, not marked)\n"
+           "mailbrief run --send --commit      the daily job: digest to Telegram, then mark processed\n"
+           "mailbrief run --backfill           once: save the whole inbox to the archive\n"
+           "mailbrief run --digest this-week   a summary of this week's saved mail",
+    "emails": "mailbrief emails                        this week's saved emails, by thread\n"
+              "mailbrief emails --search invoice       search every period\n"
+              "mailbrief emails --show 3               open email #3 of the list\n"
+              "mailbrief emails --digest --send        send today's digest again",
+    "add-destination": "mailbrief add-destination telegram                 pick from chats that messaged your bot\n"
+                       "mailbrief add-destination telegram --chat-id 123   add a chat id directly",
+    "labels": "mailbrief labels status\n"
+              "mailbrief labels apply --days 7 --dry-run\n"
+              "mailbrief labels clear --period this-month",
+    "labels apply": "mailbrief labels apply                     everything pending\n"
+                    "mailbrief labels apply --days 7 --dry-run  show what the last 7 days would get",
+    "labels clear": "mailbrief labels clear --period this-month\n"
+                    "mailbrief labels clear --all --colours      remove MailBrief's labels completely\n"
+                    'mailbrief labels clear --label "MA1521"     one of your own labels',
+    "labels retag": "mailbrief labels retag --period this-month   after changing your profile or topics",
+    "rules": "mailbrief rules list\n"
+             "mailbrief rules add course CS2040S --priority 2\n"
+             'mailbrief rules add sender tan@example.edu --label "Prof Tan" --direct\n'
+             'mailbrief rules add topic Networking "career fairs, meetups, hackathons"',
+    "rules add": "mailbrief rules add course CS2040S --priority 2\n"
+                 'mailbrief rules add sender tan@example.edu --label "Prof Tan" --direct --boost\n'
+                 'mailbrief rules add topic Networking "career fairs, meetups, hackathons"',
+    "rules remove": "mailbrief rules remove course MA1521",
+    "rules profile": 'mailbrief rules profile "Year 2 CS student looking for internships and hackathons"',
+    "index": "mailbrief index status     how many emails are searchable\n"
+             "mailbrief index update     embed what's new or changed (a run does this itself)\n"
+             "mailbrief index rebuild    start again from the archive (after a backfill, or a changed embedding model)",
+    "chat": 'mailbrief chat "when is the CS1101S midterm?"\n'
+            "mailbrief chat                                 keep asking; an empty line ends",
+    "events": "mailbrief events              the next EVENTS_DAYS days\n"
+              "mailbrief events --days 30 --past 7\n"
+              "mailbrief events --send       to Telegram",
+    "serve": 'mailbrief serve\n'
+             'mailbrief serve --at "daily 07:30; sun 20:00 this-week"',
+    "autostart": "mailbrief autostart on     start `serve` hidden each time you log in to Windows\n"
+                 "mailbrief autostart off",
+}
+
+
+def _described(add_parser, prefix: str, name: str, **kw):
+    """add_parser, plus what argparse leaves out of `mailbrief <command> --help`: the command's description
+    (its one-line help) and its examples."""
+    text = kw.get("help") or ""
+    kw.setdefault("description", text[:1].upper() + text[1:] + ("" if text.endswith((".", ")")) else "."))
+    if prefix + name in EXAMPLES:
+        kw.setdefault("epilog", "examples:\n" + "\n".join("  " + line for line in EXAMPLES[prefix + name].splitlines()))
+    kw.setdefault("formatter_class", argparse.RawDescriptionHelpFormatter)
+    return add_parser(name, **kw)
+
+
 def _main() -> None:
     load_dotenv()
     # Emoji subjects and progress marks (✓) crash Windows' cp1252 encoding when output is piped.
     for stream in (sys.stdout, sys.stderr):
         if stream:  # None under pythonw (autostart runs `serve` without a window)
             stream.reconfigure(encoding="utf-8", errors="replace")
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        ver = version("mailbrief")
+    except PackageNotFoundError:
+        ver = "(not installed)"
     parser = argparse.ArgumentParser(
-        prog="mailbrief", description="AI morning email digest for Outlook"
+        prog="mailbrief",
+        description="AI morning email digest for Outlook on the web: labels in Outlook, a digest and chat in Telegram.",
+        epilog="first time:\n"
+               "  mailbrief login                        sign in to Outlook once\n"
+               "  mailbrief add-destination telegram     where the digest goes\n"
+               "  mailbrief run --send --commit          your first digest\n"
+               "  mailbrief serve                        then every morning by itself\n"
+               "`mailbrief <command> --help` has examples; commands.md explains every command.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    sub = parser.add_subparsers(dest="command", required=True)
+    parser.add_argument("--version", action="version", version=f"mailbrief {ver}")
+    sub = parser.add_subparsers(dest="command", required=True, metavar="<command>")
+    sub.add_parser = functools.partial(_described, sub.add_parser, "")
     login_p = sub.add_parser("login", help="sign in to Outlook once in a visible browser")
     login_p.add_argument("--remote", action="store_true",
                          help="no screen (a server): print a one-time link to sign in from any browser")
     run_p = sub.add_parser(
-        "run", help="headless: classify new emails and print the digest"
+        "run", help="classify new mail, save it, label it in Outlook and print the digest "
+                    "(nothing is sent without --send, or marked processed without --commit)"
     )
     run_p.add_argument(
         "--all", action="store_true", help="every inbox email, ignoring the cursor"
@@ -1231,7 +1306,7 @@ def _main() -> None:
         "emails", help="browse saved emails (this week by default), grouped by thread"
     )
     em_p.add_argument(
-        "--period", choices=["this-week", "this-month", "last-month", "older"]
+        "--period", choices=["this-week", "this-month", "last-month", "older"], help=PERIOD_HELP + " (default this-week)"
     )
     em_p.add_argument("--day", help="one day, e.g. 2026-10-16")
     em_p.add_argument(
@@ -1265,15 +1340,16 @@ def _main() -> None:
     dest_p = sub.add_parser(
         "add-destination", help="add where digests are sent (local setup only)"
     )
-    dest_p.add_argument("type", choices=["telegram"])
+    dest_p.add_argument("type", choices=["telegram"], help="the kind of destination (Telegram is the only one so far)")
     dest_p.add_argument(
         "--chat-id", help="skip the lookup and add this chat id directly"
     )
     lab_p = sub.add_parser(
         "labels",
-        help="MailBrief's MB: labels (categories) in Outlook: status, apply, clear",
+        help="MailBrief's MB: labels (categories) in Outlook: status, apply, clear, retag",
     )
     lab_sub = lab_p.add_subparsers(dest="action", required=True)
+    lab_sub.add_parser = functools.partial(_described, lab_sub.add_parser, "labels ")
     lab_sub.add_parser("status", help="labelled / pending / cleared emails per period")
     for name, text in (
         ("apply", "label now (pending emails; also re-labels cleared ones)"),
@@ -1285,7 +1361,7 @@ def _main() -> None:
     ):
         a = lab_sub.add_parser(name, help=text)
         a.add_argument(
-            "--period", choices=["this-week", "this-month", "last-month", "older"]
+            "--period", choices=["this-week", "this-month", "last-month", "older"], help=PERIOD_HELP
         )
         a.add_argument(
             "--days", type=int, metavar="N", help="emails from the last N days"
@@ -1326,6 +1402,7 @@ def _main() -> None:
         help="your own labels: courses, senders, topics, profile (data/rules.json)",
     )
     rules_sub = rules_p.add_subparsers(dest="action", required=True)
+    rules_sub.add_parser = functools.partial(_described, rules_sub.add_parser, "rules ")
     rules_sub.add_parser(
         "list", help="your rules and how many saved emails each matches"
     )
@@ -1353,7 +1430,7 @@ def _main() -> None:
         type=int,
         choices=range(1, 6),
         metavar="1-5",
-        help="raise matching mail to at least this priority",
+        help="raise matching mail to at least this priority (1 = most urgent, 5 = least)",
     )
     add_p.add_argument(
         "--boost",
@@ -1370,8 +1447,9 @@ def _main() -> None:
         help='set who you are and what you want, e.g. "Year 2 CS student looking for internships"',
     )
     prof_p.add_argument("text", help='your profile ("" clears it)')
-    idx_p = sub.add_parser("index", help="the search index chat uses (data/index.enc): status, rebuild")
-    idx_p.add_argument("action", choices=["status", "update", "rebuild"])
+    idx_p = sub.add_parser("index", help="the search index chat uses (data/index.enc): status, update, rebuild")
+    idx_p.add_argument("action", choices=["status", "update", "rebuild"],
+                       help="status: what's indexed; update: embed new or changed emails; rebuild: start again from the archive")
     chat_p = sub.add_parser("chat", help="ask your saved emails a question in the terminal (as the Telegram chat does)")
     chat_p.add_argument("question", nargs="?", help="one question; leave out to keep asking (empty line or Ctrl+C ends)")
     sub.add_parser("bot", help="run only the Telegram chat listener in the foreground (serve runs it too)")
@@ -1398,7 +1476,7 @@ def _main() -> None:
     auto_p = sub.add_parser(
         "autostart", help="Windows: start `serve` hidden at logon (Task Scheduler)"
     )
-    auto_p.add_argument("state", choices=["on", "off"])
+    auto_p.add_argument("state", choices=["on", "off"], help="on: create the Task Scheduler task; off: remove it")
     args = parser.parse_args()
 
     if args.command == "login":
