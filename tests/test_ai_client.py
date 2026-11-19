@@ -105,6 +105,22 @@ def test_other_errors_are_not_retried():
         assert len(fake.timeouts) == 1
 
 
+def test_vendor_thinking_extension_is_opt_in(monkeypatch):
+    bodies = []
+
+    def post(path, body, **kwargs):
+        bodies.append(body)
+        return OK
+
+    monkeypatch.setattr(client, "_post", post)
+    monkeypatch.delenv("AI_CHAT_TEMPLATE_KWARGS", raising=False)
+    client.complete("m", [], thinking=True)
+    assert "chat_template_kwargs" not in bodies[-1]
+    monkeypatch.setenv("AI_CHAT_TEMPLATE_KWARGS", "on")
+    client.complete("m", [], thinking=False)
+    assert bodies[-1]["chat_template_kwargs"] == {"enable_thinking": False}
+
+
 OK = {"choices": [{"message": {"content": "fast answer"}}]}
 
 

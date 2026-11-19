@@ -28,9 +28,10 @@ def complete(model: str, messages: list[dict], thinking: bool = False, max_token
         "messages": messages,
         "temperature": 0,
         "max_tokens": max_tokens,
-        # Qwen-style switch; servers that don't know it ignore it.
-        "chat_template_kwargs": {"enable_thinking": thinking},
     }
+    # This extension is rejected by strict OpenAI-compatible servers; opt in for Qwen/Ollama.
+    if os.environ.get("AI_CHAT_TEMPLATE_KWARGS", "off").lower() in ("on", "1", "true"):
+        body["chat_template_kwargs"] = {"enable_thinking": thinking}
     # a thinking merge legitimately takes minutes; anything else answers in seconds
     timeout = 300 if thinking else 120
     # Default: your own fast model (the classifier's), so the fallback is always one your endpoint serves.
