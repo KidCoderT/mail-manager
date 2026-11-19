@@ -29,6 +29,12 @@ def _needs_ai(stored: dict | None) -> bool:
     )
 
 
+def _kept(stored: dict | None) -> dict | None:
+    """The saved classification of an email that has left the inbox, if the AI really classified it."""
+    c = (stored or {}).get("classification") or {}
+    return c if c.get("category") not in (None, "Sent", "Elsewhere", "Unclassified") else None
+
+
 RETRY_DAYS = 7  # an email the AI failed on is retried by every run for this long
 
 
@@ -179,10 +185,11 @@ def run(
     pool.update({r["id"]: r for r in records})
     for r in records:
         stored = archived.get(r["id"])
-        if not r["in_inbox"] or r["from_me"]:
-            r["classification"] = {
-                "category": "Sent" if r["from_me"] else "Elsewhere"
-            }  # context only, no AI
+        if r["from_me"]:
+            r["classification"] = {"category": "Sent"}  # context only, no AI
+        elif not r["in_inbox"]:
+            # Filed or deleted since it was classified: keep that work (summary, events), don't blank it.
+            r["classification"] = _kept(stored) or {"category": "Elsewhere"}
         elif stored and not _needs_ai(stored):
             r["classification"] = stored[
                 "classification"
