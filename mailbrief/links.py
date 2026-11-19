@@ -11,6 +11,10 @@ from urllib.parse import quote
 # Microsoft's documented web link (Graph "webLink"); Outlook redirects it to its current host and opens that email.
 OUTLOOK_READ = "https://outlook.office.com/owa/?ItemID={}&exvsurl=1&viewmodel=ReadMessageItem"
 REFS = re.compile(r"(?:\s*\[\d+\])+")  # "[3]", " [3][7]", "[3] [7]"
+# A lone "↗" is a few pixels wide: hard to hit with a thumb. The word makes the target several times wider,
+# and the no-break space keeps arrow and word on one line.
+NB = " "
+OPEN = f"↗{NB}open"
 
 
 def outlook_url(item_id: str) -> str:
@@ -26,8 +30,10 @@ def to_html(text: str, refs: dict) -> str:
     refs = {int(k): v for k, v in refs.items()}  # JSON (the saved digest) turns int keys into strings
 
     def links(m: re.Match) -> str:
-        ids = [refs[n] for n in map(int, re.findall(r"\d+", m.group(0))) if n in refs]
-        return "".join(f" {anchor(i)}" for i in dict.fromkeys(ids))
+        ids = list(dict.fromkeys(refs[n] for n in map(int, re.findall(r"\d+", m.group(0))) if n in refs))
+        if len(ids) == 1:
+            return f" {anchor(ids[0], OPEN)}"
+        return "".join(f" {anchor(i, f'↗{NB}{k}')} " for k, i in enumerate(ids, 1)).rstrip()  # "↗ 1  ↗ 2": apart
 
     out, last = [], 0
     for m in REFS.finditer(text):

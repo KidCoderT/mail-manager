@@ -71,7 +71,7 @@ def _line(ev: dict, today: date, html_mode: bool = False) -> list[str]:
     mark = ("⭐" if ev["boosted"] else "") + ("🆕" if ev["new"] else "") or "•"
     head = esc(" · ".join(x for x in (ev.get("time"), ev["name"], ev.get("place")) if x))
     if html_mode and ev.get("email_id"):
-        head += f" {links.anchor(ev['email_id'])}"  # ↗ opens the email that announced it
+        head += f" {links.anchor(ev['email_id'], links.OPEN)}"  # "↗ open": the email that announced it
     lines = [f"{mark} {head}"]
     if ev.get("detail"):
         lines.append(f"   {esc(ev['detail'])}")

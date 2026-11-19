@@ -3,7 +3,7 @@ from zoneinfo import ZoneInfo
 
 from mailbrief.ai import answer
 from mailbrief.ai.answer import parse_reply, render, validate_plan
-from mailbrief.links import anchor, outlook_url
+from mailbrief.links import OPEN, anchor, outlook_url
 
 SG = ZoneInfo("Asia/Singapore")
 
@@ -43,7 +43,7 @@ def test_parse_reply():
 def test_render():
     result = {"text": "Midterm is 7 Nov [1] <b>.", "refs": {1: "id1", 2: "id2"}, "sources": [src(1)], "closest": False}
     html = render(result, html=True).splitlines()
-    assert html[0] == f"Midterm is 7 Nov {anchor('id1')} &lt;b&gt;."  # model text escaped, refs → ↗
+    assert html[0] == f"Midterm is 7 Nov {anchor('id1', OPEN)} &lt;b&gt;."  # model text escaped, refs → ↗
     assert html[2] == "<b>Sources</b>" and html[3] == anchor("id1", "11 Oct · Sender 1 · Subject 1")
     plain = render({**result, "closest": True}).splitlines()
     assert plain[2] == "Closest matches:" and plain[3] == "[1] 11 Oct · Sender 1 · Subject 1"

@@ -261,7 +261,7 @@ uv run mailbrief run --json | python -m json.tool  # pretty-print / validate
 
 #### `--send`
 Sends the digest to every active destination in `data/destinations.json` (see `add-destination`).
-- **Every bullet ends with ↗ links** to the emails it's about; tap one to open that email in Outlook. The AI writes `[3]`-style refs, and code turns them into links (section 13). Saved digests keep the refs, so `emails --digest --send` resends them with links.
+- **Every bullet ends with a link** to the email it's about, shown as `↗ open` (or `↗ 1  ↗ 2` when a bullet covers several emails); tap one to open that email in Outlook. The AI writes `[3]`-style refs, and code turns them into links (section 13). Saved digests keep the refs, so `emails --digest --send` resends them with links.
 - **Fits in one message** (≤ 4,000 units): sent as one message.
 - **Too long:** sent as **one message per section**:
   - the `📬` header line plus the first section, then `DEADLINES & MEETINGS`, `KEY EVENTS`, `NOISE` and so on;
