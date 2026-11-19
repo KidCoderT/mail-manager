@@ -104,7 +104,7 @@ These ideas explain most decisions in the code. When something looks odd, one of
 3. **Read-only by design, with one guarded exception.** No code path can delete, send or move mail. The only write is MailBrief's own `MB:` categories, and one function (`check_request`) inspects every outgoing request and refuses anything else. A bug can't do damage that the code simply can't do.
 4. **AI reads and decides; code does the rest.** Navigation, parsing, deduplication and ordering are plain code: fast, free, predictable. The AI only does what code can't: understand language and images.
 5. **Email content is untrusted.** Anyone can send you an email saying "ignore your instructions and…". The AI that reads email has no tools and can only return a label. The model that writes the digest never sees email bodies, only the first model's labels.
-6. **Your data stays as local as possible.** The browser runs on your PC, the archive is encrypted on your disk, the AI is NUS's own endpoint. Only the summary-level digest leaves, to Telegram.
+6. **Your data stays as local as possible.** The browser runs on your PC, the archive is encrypted on your disk, the AI is whichever endpoint you configure (ideally one your organisation runs). Besides that, only the summary-level digest leaves, to Telegram.
 7. **Idempotent and resumable.** Running the same command twice must never double anything up: no duplicate archive entries, no repeated AI calls, no lost emails. Interrupting must never corrupt anything.
 8. **Fail soft, never silently.** If one part fails (an image, one AI call, one destination), the rest carries on, and you're told what happened.
 9. **The simplest thing that works** (the "ponytail" rule). JSON files before databases, stdlib `urllib` before an HTTP library, plain-`assert` tests before a framework. Each shortcut carries a `ponytail:` comment naming its limit and when to upgrade.
@@ -537,7 +537,7 @@ keep an attachment if:
     AND size ≥ 30 KB if inline, ≥ 15 KB if attached     (signature logos and icons are smaller)
     AND size ≤ 5 MB
     AND it still fits the 8 MB budget for this email
-stop at 4                                             (the NUS endpoint refuses more images per prompt)
+stop at 4                                             (many endpoints refuse more images per prompt)
 ```
 **Why these numbers?** A structure-only look at real mail (sizes and flags, no content) found inline signature images under about 20 KB and inline posters of hundreds of KB and more, so 30 KB separates them with room to spare. Before M6b every inline image was skipped, which threw away the posters staff emails embed. The endpoint accepted 7.9 MB of synthetic images in one request, so 8 MB per email is safe. Posters over 5 MB are skipped rather than resized, because resizing needs an image library (Pillow). Every image costs AI time, so logos and pixels are worth keeping out.
 
@@ -629,11 +629,11 @@ context_lines(email, thread):
 ---
 
 ### 7.8 `ai/client.py`
-**Job:** the **only** code that talks to the AI. It speaks the "OpenAI-compatible chat completions" protocol, which most model servers, including NUS SoC's, accept.
+**Job:** the **only** code that talks to the AI. It speaks the "OpenAI-compatible chat completions" protocol, which most model servers accept.
 
 ```
 function complete(model, messages, thinking=false, max_tokens):
-    key ← AI_API_KEY, or SOCLAAS_API_KEY
+    endpoint ← AI_BASE_URL (required), key ← AI_API_KEY
     body ← {model, messages, temperature 0, max_tokens,
             chat_template_kwargs: {enable_thinking: thinking}}
     POST to AI_BASE_URL/chat/completions
@@ -661,7 +661,7 @@ function extract_json(text):
 
 **Why strip `<think>` and use `extract_json`?** Models wrap JSON in code fences, add "Sure!" before it, or leak their thinking. Searching for the outermost `{…}` tolerates all of that.
 
-**Why the backoff?** The NUS endpoint is shared, and when hammered it answers **429 Too Many Requests**. The first backfill crashed on exactly that (section 12). Waiting and retrying is the polite, correct response.
+**Why the backoff?** A shared endpoint has rate limits, and when hammered it answers **429 Too Many Requests**. The first backfill crashed on exactly that (section 12). Waiting and retrying is the polite, correct response.
 
 **Why only 2 retries, and shorter waits, when there's no answer at all?** A busy server (429) answers quickly and frees up soon. A server that doesn't answer is usually *down*, and stays down for a while. The first version waited 300 s per attempt with 5 silent retries, so one unanswered call could block a run for about 32 minutes (section 12, lesson 18). Now:
 - **The wait is sized to the job.** 120 s for normal calls, which answer in 1–6 s. 300 s only for the thinking merge, which legitimately takes minutes.
@@ -714,7 +714,7 @@ classify(email, images, context):
 
 **Why validate at all?** Model output is untrusted and sometimes slightly wrong. Validation turns "almost right" into right (bad priority becomes 3) and "wrong" into a retry. Nothing malformed reaches the digest.
 
-**Why two models?** Benchmarks on the NUS endpoint (made-up emails only):
+**Why two models?** Benchmarks on the endpoint this was built against (made-up emails only):
 | Model | Text accuracy | Image test | Speed | Role |
 |---|---|---|---|---|
 | qwen3.6:35b | 12/12 | 5/5 | ~2–4 s, short output | text **and image** classification: light (only ~3B parameters active), no thinking |
@@ -1095,7 +1095,7 @@ start in:  the project folder              ← data/ and .env paths are relative
 settings:  run on battery, no time limit, ignore a second start
 ```
 - **Why `pythonw.exe`?** It's Python without a console window, so there's no black box on your screen all day. The catch: there's no stdout. `print` goes nowhere, and `sys.stdout.reconfigure(...)` would crash because `sys.stdout` is `None`. So `main()` skips the reconfigure when there's no stream, and `serve` writes everything to its log file.
-- **Why at logon, not at boot?** It runs **as you**: your user environment variables (`SOCLAAS_API_KEY`) and your files. A boot-time task would need your Windows password stored in Task Scheduler, or would run as a system account that doesn't have them.
+- **Why at logon, not at boot?** It runs **as you**: your user environment variables (an `AI_API_KEY` set in Windows, say) and your files. A boot-time task would need your Windows password stored in Task Scheduler, or would run as a system account that doesn't have them.
 - **Why the working directory matters:** paths like `data/session.enc` are relative. Started from `C:\Windows\System32`, it would look for your session there.
 
 #### Hosting: the same `serve`, in a container
@@ -1425,7 +1425,7 @@ The pieces, and why each is built that way:
   - **Playwright** is driven only from the thread that called `run`, because the sync API isn't thread-safe.
   - **The web server's threads** only put events on a `queue.Queue` and read the latest screenshot bytes.
   - `drive()` waits on the queue for up to half a second, so taps feel immediate without a busy loop.
-- **"Done" means an inbox row is visible,** the same signal `open_outlook` waits for. It doesn't mean "the URL is Outlook": NUS sign-in hops through several hosts, and saving too early would save half the cookies.
+- **"Done" means an inbox row is visible,** the same signal `open_outlook` waits for. It doesn't mean "the URL is Outlook": an organisation's sign-in hops through several hosts, and saving too early would save half the cookies.
 - **Saved, then checked:** `manager.save` as always, then a second, separate context opens Outlook with what was saved. Only if that works do you get "Logged in ✅".
 - **Nothing is kept:** screenshots and keystrokes live in memory, the request log is switched off (`log_message`), and the bot logs only "sign-in page opened/closed".
 
@@ -1433,7 +1433,7 @@ The pieces, and why each is built that way:
 - **Your inbox is never shown.** Once the browser is on `outlook.office.com` itself, `drive` keeps the picture to itself: `/frame` gives 404 and the page says *"Opening your inbox… the picture is hidden"*. It checks the address after each screenshot, so one taken just as Outlook opened is dropped too. It isn't sticky, because the first load passes through Outlook on its way to the sign-in page.
 - **A tunnel from your PC (`LOGIN_TUNNEL=cloudflared`).** A `localhost` link doesn't open on your phone, so `tunnel()` starts a Cloudflare quick tunnel to the page and uses its `https://….trycloudflare.com` address instead. The page still binds 127.0.0.1, and the cookie gets `Secure` since the browser now sees https. Points to know:
   - **The pipe is drained all the time.** A thread keeps reading cloudflared's output for the whole run; a full pipe would freeze it.
-  - **It waits for "Registered tunnel connection", then 10 more seconds.** A brand-new name takes a few seconds to reach DNS, and a lookup that comes too early is cached as "doesn't exist" for minutes. That happened on NUS's resolver in testing.
+  - **It waits for "Registered tunnel connection", then 10 more seconds.** A brand-new name takes a few seconds to reach DNS, and a lookup that comes too early is cached as "doesn't exist" for minutes. That happened on a campus resolver in testing.
   - **The process is stopped in the same `finally` that closes the server,** so the address dies with the window. A tested request afterwards gets Cloudflare's 502.
   - **It's opt-in,** because Cloudflare ends the https in the middle and so sees your password. Tailscale Serve is the private alternative: set `PUBLIC_URL` to its address.
 
@@ -1568,7 +1568,7 @@ Every numbered step also prints a progress line (`[00:17] Loading Focused tab 28
 | Data | Goes to |
 |---|---|
 | Cookies, full emails | Only your PC (browser + encrypted archive) |
-| Email text for labelling | NUS SoC's AI endpoint (in-house) |
+| Email text for labelling | The AI endpoint you set in `AI_BASE_URL` |
 | Digest (summaries) | Telegram (not end-to-end encrypted) |
 | Your password and MFA (only during `/login`) | Your browser → HTTPS → the server's Chromium → Microsoft; never stored or logged |
 

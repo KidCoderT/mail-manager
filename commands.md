@@ -39,7 +39,7 @@ uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_
 ```
 Put the output in `SESSION_ENCRYPTION_KEY=`. **Keep it safe.** It decrypts your Outlook session and your email archive. Lose it and both are unreadable, so you'd need to log in again and the archive is gone.
 
-The AI key is read from the `SOCLAAS_API_KEY` **system** environment variable (or `AI_API_KEY` if you set one). `TELEGRAM_BOT_TOKEN` can live in `.env` or a user environment variable.
+`AI_BASE_URL` (your OpenAI-compatible endpoint) and `AI_API_KEY` are required: there is no default endpoint. The endpoint needs a chat model, one that accepts images, and an embedding model; set the `AI_*_MODEL` names to the ones it serves. `AI_API_KEY` and `TELEGRAM_BOT_TOKEN` can live in `.env` or in a user environment variable.
 
 ---
 
@@ -150,7 +150,7 @@ It **never** deletes, moves, sends or marks anything as read. The only thing it 
 5. **Picks conversations** whose latest email is on or after the cursor time, plus any holding an email the AI failed on in the last 7 days.
 6. **Fetches every message** in those conversations, in any folder, so your Sent replies are included. It uses Outlook's own read-only `GetItem` call, 20 at a time.
 7. **Selects the new inbox emails:** received ≥ cursor, ID not already processed, not sent by you. **Emails the AI failed on** (saved as Unclassified) in the last 7 days are selected again, even though the cursor has moved past them, and are classified and put in this digest. The log says *"Retrying N email(s) the AI failed on earlier"*.
-8. **Collects images**, but only for emails that still need the AI, in memory only, at most 4 images (the endpoint's limit) and 8 MB per email:
+8. **Collects images**, but only for emails that still need the AI, in memory only, at most 4 images (a common endpoint limit) and 8 MB per email:
    - attached images of 15 KB–5 MB and inline ones (posters in the body) of 30 KB–5 MB, through `GetAttachment`;
    - with `REMOTE_IMAGES=on` (the default), **linked images**: a read-only GetItem reads the emails' HTML, keeps https image URLs that don't look like icons, logos or trackers, and downloads them with safety checks (no local-network addresses, no redirects, size and type limits). The senders' image servers see your IP. Details: README §3.10.
 9. **Saves the refreshed session.** Microsoft rotates cookies, so saving keeps the login alive longer.
@@ -705,7 +705,7 @@ uv run mailbrief autostart off    # remove it (a running serve keeps going until
   - **trigger:** when you log in;
   - **runs:** `.venv\Scripts\pythonw.exe -m mailbrief.main serve` in this folder (`pythonw` means no window);
   - **settings:** runs on battery, with no time limit.
-- It runs **as you**, so it sees your Windows environment variables (like `SOCLAAS_API_KEY`) and `.env`.
+- It runs **as you**, so it sees your Windows environment variables and `.env`.
 - You can see it in Task Scheduler (`taskschd.msc`) → Task Scheduler Library → MailBrief.
 - No admin rights needed.
 
@@ -731,7 +731,7 @@ A server runs the same `serve`, inside Docker. The files are in the repo:
 On the server:
 ```
 git clone <repo> && cd mail-manager
-# .env: same values as your PC, plus SOCLAAS_API_KEY=… and RUN_AT=… (on your PC the key is a Windows variable)
+# .env: same values as your PC, including AI_API_KEY=… and RUN_AT=… (if the key is a Windows variable on your PC, add it here)
 # copy data/session.enc and data/destinations.json from your PC into ./data/ (same SESSION_ENCRYPTION_KEY!)
 docker compose up -d --build                     # start (always on from now)
 docker compose logs -f                           # watch
@@ -756,11 +756,11 @@ The image needs about 2 GB of disk. Microsoft logins from a datacenter IP may ex
 
 ### Deploy on Railway
 1. **New project** → *Deploy from GitHub repo*. Railway builds the existing `Dockerfile`.
-2. **Region:** Settings → choose **Singapore**, so Microsoft and NUS see a local address.
+2. **Region:** Settings → choose the one nearest you, so Microsoft and your organisation see a local address.
 3. **Volume:** add one mounted at **`/app/data`** (session, archive, index, logs).
    - Railway volumes belong to root, so add the variable `RAILWAY_RUN_UID=0` if runs fail with "permission denied" in `data/`.
 4. **Variables:**
-   - `SESSION_ENCRYPTION_KEY`, `SOCLAAS_API_KEY`, `TELEGRAM_BOT_TOKEN`;
+   - `SESSION_ENCRYPTION_KEY`, `AI_API_KEY`, `TELEGRAM_BOT_TOKEN`;
    - `TZ=Asia/Singapore`, `RUN_AT=daily 07:30`;
    - anything else from your `.env`.
 5. **Networking** → *Generate Domain*. **Type the port in by hand:** `8080`, or whatever `PORT` is set to.
@@ -782,7 +782,7 @@ Render differs from Railway in two ways that matter:
 1. **New → Web Service** from your GitHub repo. Render detects the `Dockerfile`.
 2. **Region:** Singapore. **Instance:** Starter to begin with. Starter has 512 MB of RAM, and a run's Chromium can be tight in that; if the logs show the service being killed for memory, move up to Standard.
 3. **Disk:** Advanced → *Add Disk*, mount path **`/app/data`**, 1 GB is plenty.
-4. **Environment:** `SESSION_ENCRYPTION_KEY`, `SOCLAAS_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TZ=Asia/Singapore`, `RUN_AT=daily 07:30`.
+4. **Environment:** `SESSION_ENCRYPTION_KEY`, `AI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TZ=<your timezone>`, `RUN_AT=daily 07:30`.
    - You don't need `PORT` or `PUBLIC_URL`: Render sets `PORT` (10000) and `RENDER_EXTERNAL_URL`, the `https://….onrender.com` address used for the link.
    - **Leave the health check path empty.**
 5. **First sign-in.** Deploy, then open **Shell** in the Render dashboard and run:
@@ -797,7 +797,7 @@ Render differs from Railway in two ways that matter:
 
 Any other host that insists on an open port: set `LOGIN_PAGE=always`. The port is opened to the network only when the page's address (`PUBLIC_URL`, or the host's own) is `https://`; with no `PUBLIC_URL` it listens on `127.0.0.1` only, because plain http would send your password unencrypted.
 
-**If NUS blocks sign-ins from datacenter addresses,** the Microsoft page says so during sign-in. Then use the copy-`session.enc` route, or a home server.
+**If your organisation blocks sign-ins from datacenter addresses,** the Microsoft page says so during sign-in. Then use the copy-`session.enc` route, or a home server.
 
 ### Exit codes
 | Command | 0 | 2 | 3 |
@@ -859,12 +859,12 @@ uv add <package>      # updates pyproject.toml + uv.lock and installs it
 | Variable | Default | Affects |
 |---|---|---|
 | `SESSION_ENCRYPTION_KEY` | *(required)* | Encrypts `session.enc` and archive `.enc` files |
-| `AI_BASE_URL` | `https://soclaas-api.comp.nus.edu.sg/v1` | Which OpenAI-compatible endpoint `run` calls |
-| `AI_API_KEY` / `SOCLAAS_API_KEY` | system env var | AI key (`AI_API_KEY` wins if set) |
+| `AI_BASE_URL` | *(none: required)* | The OpenAI-compatible endpoint your email text is sent to, e.g. `http://localhost:11434/v1` |
+| `AI_API_KEY` | *(none: required)* | The endpoint's key, in `.env` or as an environment variable. A local server that needs none still wants some value |
 | `AI_CLASSIFIER_MODEL` | `qwen3.6:35b` | Classifies text-only emails |
 | `AI_VISION_MODEL` | `qwen3.6:35b` | Classifies emails with image attachments |
 | `AI_DIGEST_MODEL` | `qwen3.8:27b` | Writes the digest (thinking on) |
-| `AI_FALLBACK_MODEL` | `qwen3.6:35b` | Used when another model gives no answer in time (one try, then this). Empty = never switch |
+| `AI_FALLBACK_MODEL` | `AI_CLASSIFIER_MODEL` | Used when another model gives no answer in time (one try, then this). Empty = never switch |
 | `TELEGRAM_BOT_TOKEN` | *(none)* | Needed by everything that talks to Telegram: `add-destination`, `run --send`, `serve` (digests, alerts and the chat), `bot`, `events --send`, `emails --digest --send` |
 | `DEFAULT_TIMEZONE` | `Asia/Singapore` | Displayed times, `--day`, periods, which month file an email goes in |
 | `ARCHIVE_DAYS` | `0` (forever) | If > 0, `run` deletes month files that ended more than this many days ago |
@@ -1041,7 +1041,7 @@ uv run mailbrief index update     # embed what's new or changed (runs do this th
 uv run mailbrief index rebuild    # embed everything again (e.g. after changing AI_EMBED_MODEL)
 ```
 - **What's indexed:** every saved email with full text (inbox mail and your own replies). Per email, a header chunk (subject, sender, date, summary, labels, attachment names, events) plus the body without quoted history, cut into about 1,500-character chunks (at most 6).
-- **Sends email text to `AI_BASE_URL`** (the NUS endpoint, `bge-m3`): the same in-house endpoint classification uses. About 30 chunks a second.
+- **Sends email text to `AI_BASE_URL`** (the embedding model, `AI_EMBED_MODEL`): the same endpoint classification uses. About 30 chunks a second.
 - **Stored encrypted** in `data/index.enc`: vectors and hashes only, no email text. Safe to delete; `rebuild` recreates it.
 - **Incremental:** only new or changed emails are embedded; emails pruned from the archive are dropped.
 - Takes the run lock, so it never runs alongside a run (exit 3).

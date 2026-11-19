@@ -145,7 +145,7 @@ These formats are internal and undocumented, so all parsing lives in **one file*
 ### 3.3 AI Processor
 A two-pass pipeline behind **one function**, `complete(model, messages, thinking)` (`ai/client.py`, stdlib `urllib`). It calls any **OpenAI-compatible** chat endpoint set by `AI_BASE_URL`. **Your company's own AI model is the preferred choice**, so email content stays in-house. No provider-specific code lives anywhere else.
 
-**Current setup:** the NUS SoC endpoint (`https://soclaas-api.comp.nus.edu.sg/v1`), with the key taken from `AI_API_KEY` or the `SOCLAAS_API_KEY` system env var.
+**Setup:** `AI_BASE_URL` and `AI_API_KEY` in `.env`. Both are required: there is no default endpoint. The models below are the ones this was built and tested with, on an in-house endpoint; use the names your endpoint serves.
 
 | Role | Model | Why |
 |---|---|---|
@@ -358,7 +358,7 @@ MailBrief:  • You may bring "ONE A4 double-sided cheat sheet, handwritten or p
 - **Final test on real mail** (one-off, with permission): exam rules, this week's networking events, an assignment's requirements, "anything due for CS1101S", "what's due this week" and "what did X send last week" were answered correctly with exact quotes and sources. Two bugs found and fixed there: deadline questions searched by arrival date, and the endpoint allows at most 4 images per prompt.
 
 **Search index: a vector search, without a database server.**
-- After each run saves the archive, new or changed emails are **embedded** with `bge-m3` on the NUS endpoint. Embedding turns text into numbers, so that texts with similar meaning get similar numbers. Measured: about 30 texts a second in batches of 64.
+- After each run saves the archive, new or changed emails are **embedded** with `bge-m3` on your AI endpoint. Embedding turns text into numbers, so that texts with similar meaning get similar numbers. Measured: about 30 texts a second in batches of 64.
 - **Per email:** a header chunk (subject, sender, date, summary, labels, attachment names, events) plus the body without quoted history, in chunks of about 1,500 characters (at most 6).
 - **Stored** in `data/index.enc`, **encrypted** like the archive. It holds only vectors and hashes; chunk text is recomputed from the archive. It's a derived copy: `mailbrief index rebuild` recreates it at any time.
 - **Size:** about 870 chunks for ~400 emails, around 3.5 MB.
@@ -371,7 +371,7 @@ MailBrief:  • You may bring "ONE A4 double-sided cheat sheet, handwritten or p
 4. **Reply.** The answer, then the numbered sources, each with an **Open in Outlook** link (deep-link format still to verify), and buttons for their attachments.
 
 **Search index: a vector search, without a database server.**
-- After each run saves the archive, new emails are **embedded** with `bge-m3` on the NUS endpoint. Embedding turns text into numbers, so that texts with similar meaning get similar numbers. Checked: the endpoint serves `bge-m3`, 1024 numbers per text, under a second per call.
+- After each run saves the archive, new emails are **embedded** with `bge-m3` on your AI endpoint. Embedding turns text into numbers, so that texts with similar meaning get similar numbers. Checked: the endpoint serves `bge-m3`, 1024 numbers per text, under a second per call.
 - What's embedded per email: subject, sender, AI summary, labels, and the body in chunks of about 1,500 characters.
 - Stored in `data/index.enc`, **encrypted** like the archive. It's only a derived copy, so `mailbrief index rebuild` recreates it from the archive at any time.
 - **Search is a flat scan:** compare the question against every stored chunk. At about 1,500 emails a year this is exact and takes well under a second, so no vector database (Chroma, Qdrant…) is needed. `ponytail:` the ceiling is roughly 50,000 chunks; past that, move to `sqlite-vec`.
@@ -422,7 +422,7 @@ Before M6b, a newsletter announcing five events became "newsletter with upcoming
   - `one_line_summary` and `deadline` (the single most urgent date) stay as they are.
 - **Why a list and not a longer summary.** A longer summary for every email costs tokens on mail with nothing to say. It also hits the digest's 2,500-character limit anyway, and dates written as sentences can't be sorted or filtered. A list can. A second "short version" summary can come later, only for P1–P2 mail, if the digest still feels thin.
 - **Inline images are read.** Inline attachments of **30 KB or more** go to the vision model (attached ones from 15 KB, as before). Signature logos are smaller. Confirmed: Outlook lists inline images in `Attachments` with `IsInline` set.
-- **Limits per email:** at most **4 images** (the NUS endpoint refuses more: "At most 4 image(s) may be provided in one prompt") and **8 MB** in total, each at most 5 MB. If the endpoint ever refuses an email's images anyway, it's classified from its text instead. Checked on the endpoint with synthetic images: 7.9 MB in one request is accepted. `ponytail:` bigger posters are skipped, not resized (that needs Pillow).
+- **Limits per email:** at most **4 images** (many endpoints refuse more: "At most 4 image(s) may be provided in one prompt") and **8 MB** in total, each at most 5 MB. If the endpoint ever refuses an email's images anyway, it's classified from its text instead. Checked on the endpoint with synthetic images: 7.9 MB in one request is accepted. `ponytail:` bigger posters are skipped, not resized (that needs Pillow).
 - **Linked images: on by default** (`REMOTE_IMAGES=on`), with safeguards:
   - A read-only GetItem fetches the **HTML** body of the emails being classified. Image URLs are taken from it and the HTML is dropped.
   - **Skipped by URL:** anything that isn't `https`, URLs with a query string (tracking images usually carry one), and names that look like icons or logos (facebook, logo, avatar, spacer, pixel…).
@@ -569,8 +569,8 @@ mail-manager/
 
 ```
 # AI: any OpenAI-compatible endpoint (preferably your company's own model)
-AI_BASE_URL=https://soclaas-api.comp.nus.edu.sg/v1
-# AI_API_KEY=...                  # optional; falls back to the SOCLAAS_API_KEY system env var
+AI_BASE_URL=                     # required: your endpoint, e.g. http://localhost:11434/v1
+AI_API_KEY=                      # required: its key
 AI_CLASSIFIER_MODEL=qwen3.6:35b
 AI_VISION_MODEL=qwen3.6:35b
 AI_DIGEST_MODEL=qwen3.8:27b
@@ -641,7 +641,7 @@ AI_ANSWER_MODEL=qwen3.8:27b     # writes the cited answers
 - `storage_state` files act as **passwords** for the mailbox: encrypt them at rest (Fernet/AES), keep them out of git, and use file permissions of `600`.
 - The Telegram bot token, AI key and `BROWSER_WS_URL` (it can contain a token) live in `.env` or a secrets manager only. Never log them.
 - **Browserless cloud sends work data to a third party** (US servers). Get employer/IT approval and a data-processing agreement first. Logging in locally and then uploading the session does **not** avoid this, because the cookies still go to the cloud.
-- **A cloud host is a third party too, for the same reasons** (§9: Railway, Render). The volume holds your mail archive, your search index and a live Outlook session, and `SESSION_ENCRYPTION_KEY` is an environment variable on that same host, so **it holds both the ciphertext and the key**. Encryption at rest protects a stolen copy of `data/`, not the host running the code. Treat deploying to a cloud host as the same decision as Browserless cloud: your own server (or your own always-on PC) keeps it in-house, and the hosted options need the same employer/IT check. The region matters as well: pick one near you, or Microsoft and NUS see a foreign address on every run.
+- **A cloud host is a third party too, for the same reasons** (§9: Railway, Render). The volume holds your mail archive, your search index and a live Outlook session, and `SESSION_ENCRYPTION_KEY` is an environment variable on that same host, so **it holds both the ciphertext and the key**. Encryption at rest protects a stolen copy of `data/`, not the host running the code. Treat deploying to a cloud host as the same decision as Browserless cloud: your own server (or your own always-on PC) keeps it in-house, and the hosted options need the same employer/IT check. The region matters as well: pick one near you, or Microsoft and your organisation see a foreign address on every run.
 - **Email content is untrusted.** Models that read it have no tools. The fallback agent never runs with an email body open, and its actions pass through a code-enforced blocklist (§3.5).
 - **Telegram bot is send-only and locked down** (§3.6). Only chat IDs added via the local CLI receive digests. It also listens (M7), but acts only on those chats.
 - **The chat answer model reads email bodies** (§3.9), so an injected email could try to mislead an answer. It has no tools, can only reply in your chat, never writes links (code builds them from email ids), and any file it suggests is checked in code against the emails it cited.
