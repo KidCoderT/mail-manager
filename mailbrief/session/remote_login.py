@@ -388,6 +388,7 @@ def run(say, show_link, ttl: float = WINDOW_S) -> bool:
 
     from mailbrief.browser.connect import get_browser
     from mailbrief.browser.outlook_reader import INBOX_URL, MESSAGE_ROW, open_outlook
+    from mailbrief.browser.owa_network import find_user_email
     from mailbrief.service import lock
     from mailbrief.session import manager
 
@@ -401,7 +402,7 @@ def run(say, show_link, ttl: float = WINDOW_S) -> bool:
         else:
             server, url = listen(url, local, handler(win))
             threading.Thread(target=server.serve_forever, daemon=True).start()
-        ok, proc = False, None
+        ok, proc, other = False, None, None
         try:
             if server is not None and local and use_tunnel():
                 proc, url = tunnel(server.server_address[1])
@@ -418,11 +419,16 @@ def run(say, show_link, ttl: float = WINDOW_S) -> bool:
                     page.goto(INBOX_URL, wait_until="domcontentloaded")
                     if drive(win, page, lambda pg: pg.locator(MESSAGE_ROW).count() > 0):
                         page.wait_for_timeout(3000)  # let Outlook finish setting its cookies
-                        manager.save(context, ua)
-                        check = browser.new_context(storage_state=manager.load()["state"], user_agent=ua)
+                        # Checked from memory first: a sign-in that doesn't work must not replace a saved one that does.
+                        check = browser.new_context(storage_state=context.storage_state(), user_agent=ua)
                         cp = check.new_page()  # open_outlook alone can't tell "stuck on a sign-in page" from "slow"
-                        ok = not open_outlook(cp)["expired"] and cp.locator(MESSAGE_ROW).count() > 0
+                        opened = open_outlook(cp)
+                        ok = not opened["expired"] and cp.locator(MESSAGE_ROW).count() > 0
                         check.close()
+                        if ok:
+                            me, before = find_user_email(opened["startup"]), manager.account()
+                            manager.save(context, ua, me)
+                            other = me if before and me and before.lower() != me.lower() else None
                 finally:
                     browser.close()
         finally:
@@ -437,6 +443,9 @@ def run(say, show_link, ttl: float = WINDOW_S) -> bool:
                 server.server_close()
     if ok:
         say("Logged in ✅ The sign-in page is closed. Digests carry on as scheduled.")
+        if other:  # the saved emails, labels and rules belong to the mailbox used before
+            say(f"⚠️ This is a different account from before: MailBrief now reads {other}. If that wasn't "
+                "intended, sign in again with the usual account.")
     elif time.monotonic() >= win.expires:
         say("The sign-in window timed out before you signed in. Send /login to try again.")
     else:

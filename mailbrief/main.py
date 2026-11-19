@@ -131,7 +131,7 @@ def run(
             images = collect_images(page, result["auth"], todo)  # memory only
             with_images = [e for e in todo if images[e["id"]]]
             manager.save(
-                context, session["user_agent"]
+                context, session["user_agent"], result["me"]
             )  # Microsoft rotates auth cookies
         finally:
             browser.close()
