@@ -1,4 +1,5 @@
 from datetime import date, datetime
+import tempfile
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -17,7 +18,10 @@ from mailbrief.browser.owa_network import (
 from mailbrief import rules
 from mailbrief.labels import ALL_LABELS, is_custom, labelled, labels_for, pending, select
 
-rules.RULES_PATH = Path(__file__).with_name("no-such-rules.json")  # never read your real data/rules.json
+# Never your real data/rules.json, and never a file inside the repo: pytest imports every test module before
+# running any, so this path is also where test_bot's `/rule add` ends up writing. A fresh temp folder per run
+# keeps one run's rules out of the next (a file left in tests/ used to make test_bot fail the second time).
+rules.RULES_PATH = Path(tempfile.mkdtemp()) / "no-such-rules.json"
 
 SG = ZoneInfo("Asia/Singapore")
 H = {"RequestServerVersion": "V2018"}
