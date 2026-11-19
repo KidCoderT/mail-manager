@@ -1,25 +1,33 @@
-# MailBrief showcase
+# MailBrief website
 
-Static HTML, CSS and JavaScript. Open `index.html` directly; no build, dependencies, analytics or backend. All illustrated mail and chat exchanges are invented. The browser demo plays canned responses and never connects to a mailbox or AI endpoint.
+This is the canonical MailBrief website, published by GitHub Pages. Open `index.html` directly. Three static pages, one stylesheet and one script; no build, external assets, analytics or backend.
 
-The design uses graphite/slate surfaces, warm-white text and a restrained cobalt accent. Body copy is sans-serif; commands, logs and small labels retain the terminal influence. The header theme button remembers a light/dark preference; without JavaScript the site follows the operating system. The hero shows one fictional digest preview, not live output.
+Every page is one terminal window: a tab bar, the content, a prompt you can type into and a status bar.
 
-The setup guide is `setup.html`: steps 1–7 lead to the first digest, followed by optional backfill, custom labels, scheduling and hosting. Keep its commands aligned with `.env.example` and `commands.md` when changing the CLI. Detailed workflow and command references remain available in expandable sections, including through direct links.
+- `index.html`: an introduction beside a Telegram-style digest preview, with demo-only controls and a separate terminal output area. On mobile the preview stacks below the introduction.
+- `setup.html`: installation through the first digest, then optional archive and scheduling.
+- `docs.html`: CLI and Telegram reference, configuration, hosting and privacy. `commands.md` remains the canonical detailed reference.
 
-## GitHub Pages
+## What the prompt understands
 
-The repository's `.github/workflows/pages.yml` publishes this folder on pushes to `main`. In repository **Settings → Pages → Build and deployment**, select **GitHub Actions** as the source. After merging the branch into `main`, the workflow publishes to `https://kidcodert.github.io/mail-manager/`. It also supports a manual workflow dispatch.
+On the home page: `help`, `about`, `commands`, `man <command>`, `setup`, `docs [command]`, `github`, `tour`, `theme dark|light|system`, `clear`, and the simulated `mailbrief run`, `events`, `chat`, `status` and `labels status`. Any other real command prints its manual entry. Tab completes, Up and Down recall history, and typing anywhere on the page lands in the prompt. Command clicks respond immediately; only the optional tour types commands, and typing, Escape, or Stop tour cancels all pending tour work.
 
-## Verification
+On every page, `setup` opens the complete setup guide and `docs [command]` opens the reference. Other commands, including `man <command>` and simulations, run in the home terminal; setup/docs hand them over without changing their meaning. On docs, `/text` additionally filters the page. The mobile command menu and contents lists can be expanded without typing.
+
+The session only matches known inputs to prewritten responses. It cannot execute commands or connect to a mailbox, and the CSP disallows network connections. The `MAN` list in `site.js` holds one usage line per real command; the checker fails if the parser gains a command that the list lacks.
+
+Dark is the first-visit and no-JavaScript default. Without JavaScript the pages and the sample digest remain readable, and the prompt and command buttons are hidden. Motion (brief output fade, opening wordmark scramble, the subtle glyph backdrop) is off under reduced motion.
+
+## Verification and deployment
 
 From the repository root:
 
 ```sh
-uv sync
+uv sync --frozen
 uv run playwright install chromium --no-shell
 uv run python scripts/check_website.py
 ```
 
-Checks local files and anchors, JavaScript errors, example tabs and keyboard navigation, canned chat, copy controls, narrow layouts, dark mode, the light/dark toggle, and the page without JavaScript. It opens the files directly in headless Chromium; no server or accounts are needed.
+The checker verifies local links, parser and Telegram command coverage, themes, keyboard interactions, narrow layouts, no-JavaScript content and the terminal. GitHub Pages runs it before uploading this directory on pushes to main. Opening any page with `#selftest` in the URL runs the script's own assertions in the console.
 
-`assets/showcase.png` is a screenshot of the site's invented digest illustration, used in the repository README. It contains no real mail. The examples share a 10 November 2026 morning timeline; the payment-receipt chat follows on 11 November.
+The opening example shows a Telegram message with an invented-content caption and expandable processing logs. Home, Setup and Docs live in the top tabs; the hero has one setup CTA and single source/privacy links. The sidebar offers run, events and chat, with secondary commands in More commands. The footer is status-only. Command results appear separately below the introduction and preview; clear removes those results without hiding the product explanation. The setup guide is the only installation walkthrough. Common questions in docs cover cost, app registration, platform support, removal and lost keys.

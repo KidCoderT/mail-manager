@@ -1,7 +1,7 @@
 """Verify the MailBrief static site: links, contracts, docs coverage and the file:// demo.
 
 Run after the pages exist:  python scripts/check_website.py [folder]
-The default folder is webpage-redesign/. No HTTP server is started and nothing is sent.
+The default folder is website/. No HTTP server is started and nothing is sent.
 """
 
 import argparse
@@ -13,7 +13,7 @@ from urllib.parse import unquote, urlsplit
 
 from playwright.sync_api import expect, sync_playwright
 
-ROOT = Path(__file__).resolve().parents[1] / "webpage-redesign"
+ROOT = Path(__file__).resolve().parents[1] / "website"
 PAGES = ("index.html", "setup.html", "docs.html")
 PALETTE = ("#101116", "#191b24", "#efedf4", "#a5a8ba", "#ff78ab", "#7ddde8", "#b8a4ff")
 TELEGRAM = (
@@ -195,13 +195,17 @@ def static_checks(root):
 
         header_links = " ".join(text(a).lower() for a in find_all(page, tag="a") if any(
             n.tag == "header" for n in anc(a)))
-        for wanted in ("home", "setup", "docs", "github"):
+        for wanted in ("home", "setup", "docs"):
             assert wanted in header_links, f"{name}: header navigation is missing {wanted!r}"
         footer = find_all(page, tag="footer")[0]
         footer_links = " ".join(text(a).lower() for a in find_all(page, tag="a") if any(
             n is footer for n in anc(a)))
-        assert "github" in footer_links and any(w in footer_links for w in ("home", "setup", "docs")), \
-            f"{name}: footer needs page and GitHub links"
+        if name == "index.html":
+            assert not footer_links, "home footer is status only; navigation belongs in the header"
+            assert any("github.com/KidCoderT/mail-manager" in a.attrs.get("href", "")
+                       for a in find_all(page, tag="a")), "home: source link missing"
+        else:
+            assert "github" in footer_links, f"{name}: footer needs a GitHub link"
 
         styles = [n for n in find_all(page, tag="link") if "stylesheet" in (n.attrs.get("rel") or "")]
         scripts = [n for n in find_all(page, tag="script") if n.attrs.get("src")]
@@ -255,7 +259,7 @@ def static_checks(root):
     assert any(n is index.by_id["terminal-form"] for n in anc(terminal_input)), \
         "index.html: terminal input is not in the form"
     assert find_all(index, klass="hero") or find_all(index, tag="h1"), "index.html: no hero"
-    assert text(find_all(index, ident="terminal-output")[0]), "index.html: the no-JS transcript is empty"
+    assert text(find_all(index, klass="digest-preview")[0]), "index.html: the no-JS digest is empty"
     assert [n for n in find_all(index) if "data-command" in n.attrs], "index.html: no [data-command] buttons"
 
     layout = find_all(docs_page, klass="docs-layout")
@@ -440,7 +444,7 @@ def browser_checks(root):
                     wait_theme(page, "dark")
                 else:
                     assert effective_theme(page)[0] == "dark", "no-JS first visit must be dark"
-                    output = page.locator("#terminal-output")
+                    output = page.locator(".digest-preview")
                     assert output.is_visible() and output.inner_text().strip(), "no-JS transcript is missing"
                     usable = page.locator("#terminal-input").evaluate(
                         "e => !e.disabled && !e.readOnly && e.type !== 'hidden' && e.getClientRects().length > 0")
@@ -523,11 +527,13 @@ def browser_checks(root):
             input_ = page.locator("#terminal-input")
             blocks = page.locator("#terminal-output .block")
             input_.fill("my draft")
+            page.locator(".secondary-commands > summary").click()
             page.locator('[data-command="mailbrief labels status"]').click()
-            expect(blocks).to_have_count(2)
+            expect(blocks).to_have_count(1)
             page.clock.run_for(1500)
             expect(input_).to_have_value("my draft")
             for elapsed in (450, 530):  # during typing, then in the delayed-submit gap
+                page.locator(".secondary-commands").evaluate("e => e.open = true")
                 page.locator('[data-command="tour"]').click()
                 page.clock.run_for(elapsed)
                 before = blocks.count()
@@ -536,6 +542,7 @@ def browser_checks(root):
                 expect(input_).to_have_value("my interrupted draft")
                 expect(blocks).to_have_count(before)
                 expect(page.locator("#stop-tour")).to_be_hidden()
+            page.locator(".secondary-commands").evaluate("e => e.open = true")
             page.locator('[data-command="tour"]').click()
             page.clock.run_for(800)
             before = blocks.count()
@@ -544,6 +551,40 @@ def browser_checks(root):
             expect(blocks).to_have_count(before)
             page.close()
             ctx.close()
+
+            # Landing hierarchy: one navigation row, demo-only rail, and a readable chat preview.
+            for width, height in ((1280, 800), (390, 844)):
+                ctx = context(viewport={"width": width, "height": height})
+                page = ctx.new_page()
+                page.goto(urls["index.html"])
+                assert page.locator(".tabs a").all_text_contents() == ["home", "setup", "docs"]
+                assert page.locator(".rail a, .statusbar a").count() == 0
+                expect(page.locator(".setup-link")).to_have_count(1)
+                expect(page.locator("#terminal-results")).to_be_hidden()
+                hero = page.locator(".hero").bounding_box()
+                preview = page.locator(".telegram-preview").bounding_box()
+                assert hero and preview
+                if width >= 1180:
+                    assert preview["x"] >= hero["x"] + hero["width"], "preview should be beside the introduction"
+                else:
+                    assert preview["y"] >= hero["y"] + hero["height"], "mobile preview should stack below introduction"
+                    page.locator(".rail .contents > summary").click()
+                submenu = page.locator(".secondary-commands")
+                assert submenu.get_attribute("open") is None
+                submenu.locator("summary").click()
+                expect(submenu.locator('[data-command="tour"]')).to_be_visible()
+                assert page.locator(".rail .hint").first.evaluate("e => parseFloat(getComputedStyle(e).fontSize)") >= 14
+                assert page.locator(".digest-item p").first.evaluate("e => parseFloat(getComputedStyle(e).fontSize)") >= 16
+                page.locator("#terminal-input").fill("mailbrief events")
+                page.locator("#terminal-input").press("Enter")
+                expect(page.locator("#terminal-results")).to_be_visible()
+                expect(page.locator(".telegram-preview")).to_be_visible()
+                page.locator("#terminal-input").fill("clear")
+                page.locator("#terminal-input").press("Enter")
+                expect(page.locator("#terminal-results")).to_be_hidden()
+                expect(page.locator(".hero")).to_be_visible()
+                page.close()
+                ctx.close()
 
             # Commands keep their meaning across pages; only docs explicitly navigates to a manual.
             ctx = context(viewport={"width": 1280, "height": 800}, reduced_motion="reduce")
@@ -671,7 +712,7 @@ def browser_checks(root):
 
 def check(root):
     if not root.is_dir():
-        raise SystemExit(f"Website folder not found: {root}\nCreate webpage-redesign/ (or pass its path) first.")
+        raise SystemExit(f"Website folder not found: {root}\nCreate website/ (or pass its path) first.")
     missing = [name for name in PAGES if not (root / name).is_file()]
     if missing:
         raise SystemExit(f"{root} is missing {', '.join(missing)}; nothing was started.")
@@ -681,6 +722,6 @@ def check(root):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("path", nargs="?", help="site folder (default: webpage-redesign/)")
+    ap.add_argument("path", nargs="?", help="site folder (default: website/)")
     args = ap.parse_args()
     check(Path(args.path).resolve() if args.path else ROOT)

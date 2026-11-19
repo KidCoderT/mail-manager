@@ -1,11 +1,11 @@
-# Verifies and publishes webpage-redesign/ to GitHub Pages.
+# Verifies and publishes website/ to GitHub Pages.
 # One-time setup: repo Settings → Pages → Build and deployment → Source: "GitHub Actions".
 name: Website
 
 on:
   push:
     branches: [main]
-    paths: ["website/**", ".github/workflows/pages.yml"]
+    paths: ["website/**", "mailbrief/**", "scripts/check_website.py", ".github/workflows/pages.yml", "uv.lock"]
   workflow_dispatch:
 
 permissions:

@@ -1101,3 +1101,7 @@ Runs just the Telegram listener in the foreground, without the scheduler, until 
 - **More reaches Telegram than with the digest:** quotes from your emails, and files you ask for. Telegram bot chats aren't end-to-end encrypted. `CHAT=off` turns chat off entirely.
 - **The answering model reads email bodies,** so a malicious email could try to steer an answer. It has no tools, can only reply in your chat, and never writes links: code builds every link from email ids and escapes the model's text.
 - **The ↗ links** only work for someone signed in to your mailbox. Opening an email marks it read, as Outlook always does. Outlook usually gives a moved email a new id, so links to mail you've since moved or archived may stop working.
+
+## Website reference checks
+
+The static site is in `website/`: open `index.html`, `setup.html` or `docs.html` directly. Run `uv run python scripts/check_website.py` to verify command coverage and browser interactions. This document remains the canonical detailed command reference. The website prompt uses `setup` for the full installation guide and `docs <command>` for reference navigation; simulations keep the same meaning on every page.

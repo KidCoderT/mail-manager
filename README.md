@@ -21,7 +21,7 @@
 
 ## What you get
 
-![Illustrated preview of a MailBrief Telegram digest, using invented mail](website/assets/showcase.png)
+![Illustrated preview of a MailBrief digest, using invented mail](website/assets/showcase.png)
 
 A morning message like this (made-up mail), where every line links to its email in Outlook:
 

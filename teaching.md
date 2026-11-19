@@ -1720,3 +1720,7 @@ Each of these was found by running against real Outlook, and each shaped the cod
 | **pythonw** | Windows Python with no console window (and so no stdout) |
 | **Container / image** | Docker: an image is a packaged app plus everything it needs; a container is a running copy of it |
 | **Volume** | A folder from the host mounted into a container, so data outlives the container |
+
+## Static website and parser coverage
+
+The redesigned site lives in `website/` and needs no build or server. Its playground displays deterministic fictional responses and cannot execute shell commands. `build_parser()` exposes the CLI structure without loading environment configuration or starting the application; `_main()` uses that same parser. `scripts/check_website.py` checks documented commands and public flags against it, then verifies the site in headless Chromium. GitHub Pages runs the checker before publishing the static directory. The browser checks also cover tour cancellation while typing and before delayed submission, consistent cross-page commands, and mobile contents navigation with JavaScript disabled.

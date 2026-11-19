@@ -25,7 +25,7 @@ Everything from the milestones below, plus a review pass. No release tag has bee
 - Sign-in page: separate email, password and code fields, a loading state, dark mode, a message per ending.
 - Offline demo: 15 invented emails in a disposable archive, with real thread/event views and prewritten
   digest/chat examples; no accounts or AI endpoint needed.
-- Showcase: static `website/` with setup instructions, illustrated examples and interactive canned chat;
+- Showcase: terminal-style website in `website/`, with a Telegram digest preview, complete setup and command docs, and an interactive simulated terminal;
   GitHub Pages workflow and local responsive/accessibility smoke checks.
 - Validation: pipeline failure tests and schedule retry regression tests; mypy and Ruff enforced in CI.
 
