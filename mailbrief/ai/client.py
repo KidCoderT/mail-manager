@@ -4,6 +4,7 @@ import http.client
 import json
 import os
 import re
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -44,7 +45,7 @@ def complete(model: str, messages: list[dict], thinking: bool = False, max_token
         except NO_ANSWER as e:
             if isinstance(e, urllib.error.HTTPError):
                 raise
-            print(f"AI: {model} didn't answer in {timeout}s; using {fallback} instead", flush=True)
+            print(f"AI: {model} didn't answer in {timeout}s; using {fallback} instead", file=sys.stderr, flush=True)
             data = _post("/chat/completions", {**body, "model": fallback}, timeout=timeout)
     else:
         data = _post("/chat/completions", body, timeout=timeout)
@@ -98,14 +99,14 @@ def _post(path: str, body: dict, timeout: float = 120, timeout_retries: int = TI
             retry_after = e.headers.get("Retry-After", "")
             wait = min(MAX_WAIT_S, int(retry_after)) if retry_after.isdigit() else min(60, 3 * 2**busy)
             busy += 1
-            print(f"AI: busy ({e.code}), retrying in {wait}s ({busy}/{RETRIES})", flush=True)
+            print(f"AI: busy ({e.code}), retrying in {wait}s ({busy}/{RETRIES})", file=sys.stderr, flush=True)
         except NO_ANSWER as e:  # HTTPError is caught above
             if hung >= timeout_retries:
                 raise
             hung += 1
             wait = 3 * hung
             print(f"AI: no answer from {path} after {timeout:.0f}s ({type(e).__name__}); "
-                  f"retrying {hung}/{timeout_retries}", flush=True)
+                  f"retrying {hung}/{timeout_retries}", file=sys.stderr, flush=True)
         time.sleep(wait)
 
 

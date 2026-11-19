@@ -55,6 +55,13 @@ def test_busy_endpoint_is_still_waited_out():
     assert len(fake.timeouts) == 5
 
 
+def test_retry_messages_leave_json_stdout_clean(capsys):
+    fake = Fake([ConnectionResetError("reset"), OK])
+    assert patched(fake, lambda: client.complete("m", [])) == "fast answer"
+    output = capsys.readouterr()
+    assert output.out == "" and "retrying" in output.err
+
+
 def test_dropped_connections_are_retried_and_waits_are_capped():
     import http.client
 
