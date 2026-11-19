@@ -54,6 +54,8 @@ def test_only_your_private_chats():
                     {"update_id": 4, "callback_query": {"id": "q", "data": "a:x", "message": {"chat": {"id": 999, "type": "private"}}}}])
     b = Bot(api=api, ask=fake_ask, tz=SG)
     assert b.poll_once() == 4 and b.offset == 5
+    # The batch is confirmed to Telegram (offset 5) straight away, so a restart can't replay /sync or /login.
+    assert [p["offset"] for p in api.sent("getUpdates") if p.get("offset")] == [5]
     assert api.sent() == [] and api.sent("answerCallbackQuery") == []  # strangers learn nothing
 
 

@@ -299,8 +299,16 @@ class Bot:
             payload["offset"] = self.offset
         updates = self.api("getUpdates", payload).get("result", [])
         ignored = 0
+        if updates:
+            # Tell Telegram these are taken BEFORE acting on them. It only forgets a batch when the next call
+            # names a higher offset, so a restart right after /sync or /login would otherwise run them again.
+            self.offset = updates[-1]["update_id"] + 1
+            try:
+                self.api("getUpdates", {"offset": self.offset, "timeout": 0, "limit": 1,
+                                        "allowed_updates": payload["allowed_updates"]})
+            except Exception:  # noqa: BLE001 - the next poll confirms them anyway
+                pass
         for u in updates:
-            self.offset = u["update_id"] + 1
             chat = (u.get("message") or (u.get("callback_query") or {}).get("message") or {}).get("chat")
             if not self.allowed(chat):
                 ignored += 1
