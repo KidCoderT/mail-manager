@@ -277,8 +277,9 @@ Sends the digest to every active destination in `data/destinations.json` (see `a
 - **After the digest, the UPCOMING EVENTS calendar** goes as its own message (see [`mailbrief events`](#mailbrief-events-the-upcoming-events-calendar)). It's sent only when the digest reached a destination, and if it fails it's reported but never holds back the cursor. `EVENTS_DAYS=0` turns it off.
 
 #### `--commit`
-Marks this run's emails as **processed** by advancing the cursor, so the next `run` won't show them again. It **refuses** in two cases (exit 4 for previews, exit 1 for no delivery):
+Marks this run's emails as **processed** by advancing the cursor, so the next `run` won't show them again. It **refuses** in three cases (exit 4 for previews or an unsaved archive, exit 1 for no delivery):
 - any email has only the list **preview**, not full text (the GetItem fallback was used). Moving the cursor would lose those emails' full text for good;
+- the emails **couldn't be saved** to the archive (disk full, a file locked, a month that won't decrypt). The archive is where failed AI calls are retried from, so moving the cursor would lose them;
 - `--send` was used and the digest reached **no** destination.
 
 Without `--commit` you can rerun as often as you like and see the same emails (the AI isn't called again for saved ones).
@@ -316,7 +317,7 @@ Leaves out the per-email lines and the digest text. Only progress, counts and re
 | 1 | Cursor not advanced: the digest reached no destination |
 | 2 | No saved session, or the session expired: run `mailbrief login` |
 | 3 | Another run is in progress (nothing done) |
-| 4 | Digest sent, but `--commit` refused because only list previews were available. The cursor is kept, so those emails are read again next time. `serve` does **not** retry this, because a retry would just send the same digest again |
+| 4 | Digest sent, but `--commit` refused because only list previews were available or the archive couldn't be saved. The cursor is kept, so those emails are read again next time. `serve` does **not** retry this, because a retry would just send the same digest again |
 
 ---
 

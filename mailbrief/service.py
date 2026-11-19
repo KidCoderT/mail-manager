@@ -300,7 +300,7 @@ def _serve(spec: str, schedule: list[dict]) -> int:
                     t0 = time.monotonic()
                     code = _run_child(scope)
                     secs = int(time.monotonic() - t0)
-                    result = {0: "ok", 2: "login needed", 4: "sent, but only previews (cursor kept)"}.get(code, f"failed (exit {code})")
+                    result = {0: "ok", 2: "login needed", 4: "sent, but not marked processed (cursor kept)"}.get(code, f"failed (exit {code})")
                     log(f"run finished: {result} in {secs}s")
                     state["last_run"] = {"at": datetime.now(tz).isoformat(), "scope": scope, "result": result, "seconds": secs}
                     if code == 2:

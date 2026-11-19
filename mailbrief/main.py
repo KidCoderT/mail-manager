@@ -248,9 +248,13 @@ def run(
     t_classify = time.time() - t1
 
     # Save before the digest: a period digest reads this run's emails back from the archive.
-    try:  # saving is a convenience: a failure here must not lose the digest or block delivery
-        progress.step("Saving to the archive…")
+    saved = True
+    try:  # an old month not deleted (a typo in ARCHIVE_DAYS) must not stop this run's emails being saved
         archive.prune(datetime.now(tz).date())
+    except Exception as e:  # noqa: BLE001
+        print(f"warning: old archive months not pruned ({type(e).__name__}: {e}); check ARCHIVE_DAYS", file=log)
+    try:  # a failure here must not lose the digest or block delivery (but the cursor stays: see below)
+        progress.step("Saving to the archive…")
         paths = archive.save(
             records, [r["classification"] for r in records], None, plain, tz
         )
@@ -258,6 +262,7 @@ def run(
         names = ", ".join(p.name for p in paths) or "nothing new"
         saved_msg = f"Saved ({kind}): {names} in {archive.ARCHIVE_DIR}  (view with `mailbrief emails`)"
     except Exception as e:  # noqa: BLE001
+        saved = False
         saved_msg = f"warning: archive not saved ({type(e).__name__}: {e})"
     else:
         from mailbrief import labels
@@ -347,6 +352,9 @@ def run(
                 "Cursor not advanced: the digest wasn't delivered anywhere.", file=log
             )
             return 1
+        if not saved:  # unsaved emails must be read again: the archive is where failed AI calls are retried from
+            print("Cursor not advanced: these emails weren't saved to the archive.", file=log)
+            return 4
         try:
             cur.save(cur.advance(cursor, targets))
         except ValueError as e:  # previews only: the digest went out, but these emails must be read again

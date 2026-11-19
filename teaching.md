@@ -1080,7 +1080,7 @@ The only imperfect case is a kill between "digest sent" and "cursor saved": you'
 
 #### Retries and the login alert
 - **Exit 1 or 3, or a timeout:** worth retrying. Typical causes are no network yet after waking, or a run you started by hand still going. So it retries in 15 min, up to 3 attempts, then moves on to the next scheduled time.
-- **Exit 4** (digest sent, but the cursor kept because only previews were available): treated as done. A retry would only send the same digest again.
+- **Exit 4** (digest sent, but the cursor kept because only previews were available, or the archive couldn't be saved): treated as done. A retry would only send the same digest again.
 - **Exit 2 (login expired):** retrying can't help, because only you can log in. An unattended service that just logs "login needed" would leave you wondering why the digests stopped. So it sends a Telegram message, **at most once a day** (remembered in `schedule.json`), so a week of failed runs doesn't spam you.
 
 #### Logs without content
