@@ -62,6 +62,17 @@ def test_overlong_single_line_is_hard_cut():
     assert all(size(m) <= 4096 for m in out) and sum(m.count("y") for m in out) == 9000
 
 
+def test_html_hard_cut_never_splits_a_link_or_an_entity():
+    link = '<a href="https://outlook.office.com/mail/inbox/id/AAMk%2Fabc">↗</a>'
+    line = "Tom &amp; Jerry " + " ".join(f"point {n} {link}" for n in range(700))  # one line, far over the limit
+    parts = messages(line, html_mode=True)
+    assert len(parts) > 1
+    for p in parts:
+        assert p.count("<a ") == p.count("</a>") and html_size(p) <= LIMIT
+        assert not re.search(r"<[^>]*$|^[^<]*>|&[#\w]*$", p.split(" · ")[0])  # no half tag or entity at a cut
+    assert sum(p.count("</a>") for p in parts) == 700
+
+
 def test_heading_detection():
     for h in ("NOISE", "KEY EVENTS", "DEADLINES & MEETINGS (with dates; say \"passed\")", "FYI (one line each, only the useful ones)",
               "TOP PRIORITIES TODAY:", "STILL OPEN"):

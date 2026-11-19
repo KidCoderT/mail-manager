@@ -72,14 +72,20 @@ def _api(method: str, payload: dict | None = None) -> dict:
     raise TelegramError("429 Too Many Requests (still rate-limited after retries)")
 
 
-def _hard_cut(line: str, limit: int) -> list[str]:
-    """Cut one overlong line into pieces of at most `limit` UTF-16 units (only for very odd output)."""
+# What an HTML line may be cut between: a whole link, any other tag, an entity (&amp;), or one character.
+_HTML_ATOM = re.compile(r"<a\b[^>]*>.*?</a>|<[^>]+>|&[#\w]{1,10};|.", re.S)
+
+
+def _hard_cut(line: str, limit: int, measure=size) -> list[str]:
+    """Cut one overlong line into pieces of at most `limit` UTF-16 units (only for very odd output).
+    HTML text is cut between links, tags and entities, never inside one: half an <a> makes Telegram refuse
+    the message, and the plain-text resend would then show the broken tag."""
     pieces, current = [], ""
-    for ch in line:
-        if size(current + ch) > limit:
+    for atom in _HTML_ATOM.findall(line) if measure is html_size else line:
+        if current and measure(current + atom) > limit:
             pieces.append(current)
             current = ""
-        current += ch
+        current += atom
     return pieces + ([current] if current else [])
 
 
@@ -116,7 +122,7 @@ def _chunk_block(lines: list[str], measure=size) -> list[str]:
     target = min(LIMIT, -(-measure("\n".join(lines)) // pieces_needed) + 200)
     chunks, current = [], []
     for line in lines:
-        for piece in (_hard_cut(line, LIMIT - 100) if measure(line) > LIMIT - 100 else [line]):
+        for piece in (_hard_cut(line, LIMIT - 100, measure) if measure(line) > LIMIT - 100 else [line]):
             if current and measure("\n".join(current + [piece])) > target:
                 chunks.append(current)
                 current = [cont] if cont else []
