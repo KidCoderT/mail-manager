@@ -59,6 +59,24 @@ def test_token_is_single_use_and_becomes_a_cookie():
         s.server_close()
 
 
+def test_a_silent_connection_is_dropped():
+    import socket
+
+    h = rl.handler(rl.Window())
+    assert 0 < h.timeout <= 30  # the stdlib default is None: wait forever
+    h.timeout = 0.3  # the same mechanism, quicker for the test
+    server = rl.Server(("127.0.0.1", 0), h)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = socket.create_connection(("127.0.0.1", server.server_address[1]), timeout=5)
+        c.sendall(b"POST /input HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: 900\r\n\r\nx")  # then nothing
+        assert c.recv(100) == b""  # the server gave up and closed, instead of holding a thread for good
+        c.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_input_checks():
     win = rl.Window(secure=False)
     s = serve(win)

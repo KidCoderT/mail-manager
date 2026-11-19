@@ -140,6 +140,10 @@ def handler(win):
     current = win if callable(win) else (lambda: win)
 
     class Handler(BaseHTTPRequestHandler):
+        # Seconds a connection may sit silent (stdlib default: forever). Without it anyone could open idle
+        # connections, or send half a request, and pin a thread and a socket each until `serve` ran out.
+        timeout = 10
+
         def log_message(self, *args):  # no request lines in any log
             pass
 
