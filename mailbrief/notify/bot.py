@@ -218,8 +218,11 @@ class Bot:
 
         def work():
             try:
+                before = _last_digest()
                 code = (self.run_sync or run_sync)()
-                note = {0: None, 3: "A run was already in progress; its digest comes as usual.",
+                # Exit 0 covers "digest sent" and "nothing new": only the second needs a word from here.
+                quiet = "✅ No new mail since the last check." if _last_digest() == before else None
+                note = {0: quiet, 3: "A run was already in progress; its digest comes as usual.",
                         2: "Outlook needs you to sign in again: send /login."}.get(code, f"The check failed (exit {code}); it's in the log.")
                 if note:
                     self.say(chat_id, note)
@@ -355,6 +358,16 @@ def fetch_files(wanted: list[tuple[dict, dict]]) -> list[dict]:
             if f:
                 out.append(f)
     return out
+
+
+def _last_digest() -> str | None:
+    """When the newest saved digest was written (digests go in the current month's file). None if unknown."""
+    from mailbrief import archive
+
+    try:
+        return max((d["at"] for d in archive.load(archive.months()[-1:])[1]), default="")
+    except Exception:  # noqa: BLE001 - can't tell: say nothing rather than a wrong "no new mail"
+        return None
 
 
 def run_sync() -> int:

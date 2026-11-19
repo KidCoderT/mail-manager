@@ -1074,7 +1074,7 @@ Runs inside `mailbrief serve` (or alone with `mailbrief bot`, for testing). It l
 |---|---|
 | `/help` (or `/start`) | What the bot can do |
 | `/new` | Forget this conversation |
-| `/sync` | Check for new mail now: a normal run with `--send`, so the digest arrives as usual |
+| `/sync` | Check for new mail now: a normal run with `--send`, so the digest arrives as usual. With nothing new it replies `✅ No new mail since the last check.` |
 | `/digest` | Send the latest saved digest again (with links), then the events calendar |
 | `/events [days]` | The upcoming-events calendar (default 14 days) |
 | `/labels` | Your label rules (as `mailbrief rules list`) |

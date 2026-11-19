@@ -126,7 +126,13 @@ def test_commands_and_errors():
         if synced:
             break
         time.sleep(0.02)
-    assert synced and "Checking for new mail" in api.sent()[-1]["text"]
+    for _ in range(50):
+        if "No new mail" in api.sent()[-1]["text"]:
+            break
+        time.sleep(0.02)
+    texts = [p["text"] for p in api.sent()]
+    # Nothing new: say so, instead of leaving "is it stuck?" hanging after the first reply.
+    assert synced and "Checking for new mail" in texts[-2] and texts[-1].startswith("✅ No new mail")
 
 
 def test_label_command_parsing():
