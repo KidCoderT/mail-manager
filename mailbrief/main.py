@@ -406,7 +406,8 @@ def digest_set(scope: str, targets: list[dict], cursor: dict, tz, log, retry=fro
         emails = [
             e
             for e in archive.load()[0]
-            if scope == "all" or archive.in_period(e, scope, today, tz)
+            if (scope == "all" or archive.in_period(e, scope, today, tz))
+            and (as_of is None or e["received_at"].astimezone(tz).date() <= today)
         ]
         emails.sort(key=lambda e: e["received_at"])
     # Only incoming mail with a real classification: not your sent replies or other-folder copies.
