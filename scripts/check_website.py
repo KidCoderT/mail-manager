@@ -11,7 +11,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1] / "webpage-redesign"
 PAGES = ("index.html", "setup.html", "docs.html")
@@ -514,6 +514,76 @@ def browser_checks(root):
             assert not requests, f"playground network requests: {requests}"
             page.close()
             ctx.close()
+
+            # A user draft must win over every stage of the opt-in tour.
+            ctx = context(viewport={"width": 1280, "height": 800})
+            page = ctx.new_page()
+            page.clock.install()
+            page.goto(urls["index.html"])
+            input_ = page.locator("#terminal-input")
+            blocks = page.locator("#terminal-output .block")
+            input_.fill("my draft")
+            page.locator('[data-command="mailbrief labels status"]').click()
+            expect(blocks).to_have_count(2)
+            page.clock.run_for(1500)
+            expect(input_).to_have_value("my draft")
+            for elapsed in (450, 530):  # during typing, then in the delayed-submit gap
+                page.locator('[data-command="tour"]').click()
+                page.clock.run_for(elapsed)
+                before = blocks.count()
+                input_.fill("my interrupted draft")
+                page.clock.run_for(8000)
+                expect(input_).to_have_value("my interrupted draft")
+                expect(blocks).to_have_count(before)
+                expect(page.locator("#stop-tour")).to_be_hidden()
+            page.locator('[data-command="tour"]').click()
+            page.clock.run_for(800)
+            before = blocks.count()
+            page.locator("#stop-tour").click()
+            page.clock.run_for(8000)
+            expect(blocks).to_have_count(before)
+            page.close()
+            ctx.close()
+
+            # Commands keep their meaning across pages; only docs explicitly navigates to a manual.
+            ctx = context(viewport={"width": 1280, "height": 800}, reduced_motion="reduce")
+            page = ctx.new_page()
+            for origin in PAGES:
+                for command, expected in (("mailbrief events", "UPCOMING EVENTS"), ("man run", "USAGE")):
+                    page.goto(urls[origin])
+                    page.locator("#terminal-input").fill(command)
+                    page.locator("#terminal-input").press("Enter")
+                    expect(page).to_have_url(urls["index.html"])
+                    expect(page.locator("#terminal-output")).to_contain_text(expected)
+                page.goto(urls[origin])
+                page.locator("#terminal-input").fill("setup")
+                page.locator("#terminal-input").press("Enter")
+                expect(page).to_have_url(urls["setup.html"])
+                page.locator("#terminal-input").fill("docs run")
+                page.locator("#terminal-input").press("Enter")
+                expect(page).to_have_url(urls["docs.html"] + "#cmd-run")
+            page.close()
+            ctx.close()
+
+            # Mobile contents are discoverable without commands, including with JavaScript off.
+            for javascript in (True, False):
+                ctx = context(viewport={"width": 390, "height": 844}, java_script_enabled=javascript,
+                              is_mobile=True, has_touch=True)
+                page = ctx.new_page()
+                for name, target in (("docs.html", "#cmd-run"), ("setup.html", "#first-digest")):
+                    page.goto(urls[name])
+                    contents = page.locator(".docs-nav .contents")
+                    expect(contents.locator("summary")).to_be_visible()
+                    if javascript:
+                        assert contents.get_attribute("open") is None
+                        contents.locator("summary").click()
+                    link = contents.locator('a[href="' + target + '"]')
+                    expect(link).to_be_visible()
+                    link.click()
+                    expect(page).to_have_url(urls[name] + target)
+                    expect(page.locator(target)).to_be_visible()
+                page.close()
+                ctx.close()
 
             # Reduced motion is respected.
             ctx = context(viewport={"width": 1280, "height": 800}, reduced_motion="reduce")

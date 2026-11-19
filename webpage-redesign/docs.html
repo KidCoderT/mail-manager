@@ -38,6 +38,7 @@
     <label for="docs-search">Filter the docs</label>
     <input id="docs-search" type="search" placeholder="e.g. backfill, --days, /login" autocomplete="off">
     </div>
+    <details class="contents" open><summary>On this page</summary>
     <nav aria-label="Sections">
       <p class="docs-nav-group">Start</p>
       <ul>
@@ -84,9 +85,11 @@
         <li><a href="#exit-codes" data-search="exit codes">Exit codes</a></li>
         <li><a href="#hosting" data-search="hosting docker railway render server">Hosting</a></li>
         <li><a href="#recipes" data-search="recipes workflows">Recipes</a></li>
+        <li><a href="#faq">Common questions</a></li>
         <li><a href="#privacy" data-search="privacy limits security">Privacy &amp; limits</a></li>
       </ul>
     </nav>
+    </details>
   </aside>
 
   <article class="docs-content">
@@ -597,11 +600,29 @@ uv run mailbrief emails --search "acceptance fee" --thread 1</code></pre>
       <p>Slow runs or <code>AI: no answer from …</code> mean the AI endpoint isn't answering; each call gives up after 2 retries, so the run fails instead of hanging.</p>
     </section>
 
+    <section class="doc-section" id="faq">
+      <h2>Common questions</h2>
+      <h3>What does it cost?</h3>
+      <p>MailBrief is free, open-source software under the MIT licence. Creating a Telegram bot is free. Your AI endpoint may charge for classification, digests, chat and embeddings; running your own models uses your own hardware. A rented server is an additional cost. There is no MailBrief subscription.</p>
+      <h3>Does it need an app registration?</h3>
+      <p>No Microsoft app registration is needed: MailBrief uses your existing Outlook web session. That does not grant permission to automate a mailbox. Check your organisation's policy on automation, AI endpoints and Telegram before starting.</p>
+      <h3>Does it work on macOS or Linux?</h3>
+      <p>The established paths are Windows and the Linux Docker image. The Python and Playwright code should also run on macOS, but macOS is not regularly tested. The <code>autostart</code> command is Windows-only; use Docker or your own service manager elsewhere.</p>
+      <h3>How do I remove it?</h3>
+      <p>Stop the scheduler first. While your Outlook session still works, remove MailBrief's categories:</p>
+<pre data-copy><code>uv run mailbrief stop
+uv run mailbrief labels clear --all --colours</code></pre>
+      <p>If you enabled Windows autostart, run <code>uv run mailbrief autostart off</code>. Stop any separately running bot or container too. You can then delete the project folder and its <code>data/</code> archive, remove any separately configured startup service, and revoke your Telegram bot token through @BotFather. Deleting the local archive is permanent; your emails remain in Outlook. Your own non-MB categories are untouched.</p>
+      <h3>What if I lose the encryption key?</h3>
+      <p>The saved session and archive can no longer be read. Generate a new key, sign in again, and rebuild from the emails still in Outlook with <code>uv run mailbrief run --backfill</code>, then <code>uv run mailbrief index rebuild</code>. Previously saved digests cannot be recovered without the old key; the original emails are untouched.</p>
+    </section>
+
     <section class="doc-section" id="privacy">
       <h2>Privacy &amp; limits</h2>
       <ul>
         <li><strong>Stays on your machine:</strong> the browser session, the encrypted archive and the search index.</li>
         <li><strong>Leaves it:</strong> email text and images go to <code>AI_BASE_URL</code>; digests, chat answers, quotes and requested files go to Telegram, whose bot chats aren't end-to-end encrypted. <code>CHAT=off</code> turns the chat off.</li>
+        <li><strong>Optional sign-in tunnel:</strong> with <code>LOGIN_TUNNEL=cloudflared</code>, the tunnel provider can see the remote sign-in page traffic, including what you type. On a rented server, the host holds both the encrypted archive and its key.</li>
         <li><strong>Linked images:</strong> with <code>REMOTE_IMAGES=on</code>, senders' image servers see your IP.</li>
         <li><strong>Prompt injection:</strong> the answering model reads email bodies but has no tools, can only reply in your chat, and never writes links; code builds them.</li>
         <li><strong>Outlook links</strong> work only for someone signed in to your mailbox. Opening one marks the email read, as Outlook always does.</li>
@@ -616,7 +637,7 @@ uv run mailbrief emails --search "acceptance fee" --thread 1</code></pre>
   <label class="prompt" for="terminal-input"><span aria-hidden="true">❯</span><span class="visually-hidden">Command</span></label>
   <div class="cmd-field">
     <span class="ghost" aria-hidden="true"></span>
-    <input id="terminal-input" name="command" type="text" maxlength="120" placeholder="man run, /filter text, or home" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
+    <input id="terminal-input" name="command" type="text" maxlength="120" placeholder="help, docs run, or mailbrief events" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
   </div>
   <button type="submit">run <kbd>⏎</kbd></button>
 </form>

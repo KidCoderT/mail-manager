@@ -34,6 +34,7 @@
 </header>
 <main id="main" class="docs-layout setup">
   <aside class="docs-nav" aria-label="Steps">
+    <details class="contents" open><summary>On this page</summary>
     <nav aria-label="Steps">
       <p class="docs-nav-group">Steps</p>
       <ul>
@@ -54,6 +55,7 @@
         <li><a href="docs.html">Every command</a></li>
       </ul>
     </nav>
+    </details>
   </aside>
   <article class="docs-content">
   <header class="page-intro">
@@ -73,8 +75,8 @@
       <ul>
         <li>A <strong>Microsoft 365 work or school account</strong> that you read in Outlook on the web (<code>outlook.office.com</code>). Personal Outlook.com accounts are not supported.</li>
         <li>An <strong>OpenAI-compatible AI endpoint</strong> serving a chat model, a model that accepts images, and an embedding model. Use one your organisation runs, or a local server such as Ollama. There is no default endpoint.</li>
-        <li>A <strong>Telegram</strong> account. You create your own bot in step 4.</li>
-        <li><strong>Python 3.11</strong>, <a href="https://docs.astral.sh/uv/">uv</a> and git, on Windows, Linux or macOS. For an always-on server, Docker.</li>
+        <li>A <strong>Telegram</strong> account. You create your own bot in step 5.</li>
+        <li><strong>Python 3.11</strong>, <a href="https://docs.astral.sh/uv/">uv</a> and git, on Windows, Linux or macOS. For an always-on server, Docker. Windows and the Linux Docker image are the established paths; macOS is not regularly tested.</li>
       </ul>
       <p>To look around first, the offline tour needs no account and no key: run <code>uv sync</code>, then <code>uv run python demo/run.py</code>. It uses 15 invented emails in a temporary archive.</p>
     </li>

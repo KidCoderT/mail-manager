@@ -195,7 +195,7 @@
     row('about', 'what MailBrief is'),
     row('commands', 'every real mailbrief command'),
     row('man <command>', 'usage and flags for one command', 'man run'),
-    row('setup', 'from clone to your first digest'),
+    row('setup', 'open the complete setup guide'),
     row('docs', 'open the full reference'),
     row('github', 'open the source'),
     row('tour', 'play the demo session'),
@@ -211,25 +211,6 @@
     '',
     ['t-dim', 'A leading "uv run" is fine. Tab completes, Up and Down recall history.'],
     ['t-dim', 'Every answer is prewritten. Nothing is executed and nothing leaves this page.']
-  ];
-
-  var SETUP = [
-    ['t-h', 'From clone to your first digest'],
-    ['t-dim', 'Needs a Microsoft 365 work or school account, an OpenAI-compatible AI endpoint,'],
-    ['t-dim', 'Telegram, Python 3.11, uv and git.'],
-    '',
-    pre('1  git clone ' + GITHUB + '.git'),
-    pre('   cd mail-manager'),
-    pre('2  uv sync'),
-    pre('   uv run playwright install chromium --no-shell'),
-    pre('3  cp .env.example .env'),
-    segs(['t-dim', '   then set SESSION_ENCRYPTION_KEY, AI_BASE_URL and TELEGRAM_BOT_TOKEN']),
-    pre('4  uv run mailbrief login'),
-    pre('5  uv run mailbrief add-destination telegram'),
-    pre('6  uv run mailbrief run --send --commit'),
-    '',
-    segs(['t-dim', 'Every step explained, plus scheduling and Docker: '], link('setup.html', 'setup.html')),
-    segs(['t-dim', 'No account yet? The offline tour needs none: '], ['', 'uv run python demo/run.py'])
   ];
 
   // Not commands, but people will type them.
@@ -295,7 +276,7 @@
     if (c === 'help' || c === '?') return { lines: HELP };
     if (!c || c === '--help' || c === '-h' || c === 'commands' || c === 'ls') return { lines: commandList() };
     if (c === 'about') return { lines: ABOUT };
-    if (c === 'tour' || c === 'demo') return { lines: [['t-dim', 'Playing four commands. Type anything to stop.']], tour: true };
+    if (c === 'tour' || c === 'demo') return { lines: [['t-dim', 'Playing four examples. Type, press Escape, or use Stop tour to take over.']], tour: true };
     if (c === 'home') return { lines: [['t-dim', 'You are home. Type help, or about.']] };
     if (c === 'github' || c === 'source' || c === 'repo') {
       return { lines: [segs(['t-dim', 'Opening '], link(GITHUB, GITHUB))], go: GITHUB };
@@ -316,7 +297,7 @@
       return { lines: [['t-pink', 'No manual entry for ' + target.join(' ') + '.'], segs(['t-dim', 'See them all: '], cmd('commands'))] };
     }
     // "setup" and "docs" are this site's pages; "mailbrief status" etc. stay MailBrief's.
-    if (!bare && c === 'setup') return { lines: SETUP };
+    if (!bare && c === 'setup') return { lines: [['t-dim', 'Opening the complete setup guide.']], go: 'setup.html' };
     if (!bare && words[0] === 'docs') {
       var section = findMan(words.slice(1));
       var url = 'docs.html' + (section ? '#' + anchorOf(section[0]) : '');
@@ -405,13 +386,6 @@
     return node;
   }
 
-  // Lines arrive one after another. CSS turns the animation off under reduced motion.
-  function stagger(block) {
-    Array.prototype.forEach.call(block.querySelectorAll('.ln'), function (ln, i) {
-      ln.style.animationDelay = Math.min(i, 40) * 16 + 'ms';
-    });
-  }
-
   // The "decrypt" effect: random glyphs settle into the real text, left to right.
   var GLYPHS = '!<>-_\\/[]{}=+*^?#01';
   function scramble(node) {
@@ -455,7 +429,19 @@
     var cursor = 0; // index into history; history.length means "the draft"
     var draft = '';
     var typing = null;
+    var pendingRun = null;
+    var pendingStep = null;
     var touring = 0;
+    var stopButton = document.getElementById('stop-tour');
+
+    function stopTour() {
+      touring++;
+      clearInterval(typing);
+      clearTimeout(pendingRun);
+      clearTimeout(pendingStep);
+      if (stopButton) stopButton.hidden = true;
+    }
+    if (stopButton) stopButton.addEventListener('click', stopTour);
 
     function showGhost() {
       if (!ghost) return;
@@ -479,18 +465,15 @@
       block.appendChild(out);
       output.appendChild(block);
       while (output.children.length > MAX_BLOCKS) output.removeChild(output.firstChild);
-      stagger(block);
-      var heading = out.querySelector('.t-h');
-      if (heading) scramble(heading);
       // Start reading at the command, not at the end of its output.
       pane.scrollTop = block.offsetTop - pane.offsetTop - 12;
     }
 
     function go(url) {
-      setTimeout(function () { window.location.href = url; }, calm ? 0 : 350);
+      window.location.href = url;
     }
 
-    // On setup.html and docs.html the prompt jumps, filters, or hands over to the home terminal.
+    // Navigation is explicit; all other commands keep their home-terminal meaning.
     function runElsewhere(shown) {
       var c = normalize(shown);
       var typed = shown.toLowerCase();
@@ -501,16 +484,12 @@
         window.scrollTo(0, 0);
         return;
       }
-      if (c === 'clear' && search) { search.value = ''; search.dispatchEvent(new Event('input')); return; }
-      if (words[0] === 'theme' && words[1]) { setTheme(words[1]); return; }
       if (c === 'home') { window.location.href = 'index.html'; return; }
-      if (c === 'github') { window.location.href = GITHUB; return; }
-      if (typed === 'setup') { window.location.href = 'setup.html'; return; }
-      var entry = findMan(manTarget(words) || (words[0] === 'docs' ? words.slice(1) : words));
-      if (entry || typed === 'docs') {
+      var navigation = typed === 'setup' || words[0] === 'docs' || ['github', 'source', 'repo'].indexOf(c) !== -1;
+      if (navigation) {
         if (search && search.value) { search.value = ''; search.dispatchEvent(new Event('input')); }
-        window.location.href = 'docs.html' + (entry ? '#' + anchorOf(entry[0]) : '');
-        return;
+        var destination = respond(shown);
+        if (destination.go) { window.location.href = destination.go; return; }
       }
       window.location.href = 'index.html#!' + encodeURIComponent(shown);
     }
@@ -535,44 +514,53 @@
       if (result.tour) tour();
     }
 
-    // Clicked commands are typed out first, so the prompt shows what ran.
+    // Only the opt-in tour types commands. All pending work is cancellable.
     function typeAndRun(text, then) {
       clearInterval(typing);
+      var id = touring;
       if (calm || !home) { input.value = ''; run(text); if (then) then(); return; }
       var i = 0;
       input.value = '';
       typing = setInterval(function () {
+        if (id !== touring) return;
         input.value = text.slice(0, ++i);
         if (i < text.length) return;
         clearInterval(typing);
-        setTimeout(function () { input.value = ''; showGhost(); run(text); if (then) then(); }, 140);
+        pendingRun = setTimeout(function () {
+          if (id !== touring) return;
+          input.value = ''; showGhost(); run(text); if (then) then();
+        }, 140);
       }, 22);
     }
 
     function tour() {
+      stopTour();
       var id = ++touring;
+      if (stopButton) stopButton.hidden = false;
       var step = 0;
       (function next() {
-        if (id !== touring || step >= TOUR.length) return;
-        setTimeout(function () {
+        if (id !== touring) return;
+        if (step >= TOUR.length) { if (stopButton) stopButton.hidden = true; return; }
+        pendingStep = setTimeout(function () {
           if (id === touring) typeAndRun(TOUR[step++], next);
-        }, step ? 2600 : 600);
+        }, step ? 6500 : 400);
       })();
     }
 
     form.addEventListener('submit', function (event) {
       event.preventDefault();
-      touring++;
-      clearInterval(typing);
+      stopTour();
       var value = input.value;
       input.value = '';
       showGhost();
       run(value);
     });
 
-    input.addEventListener('input', function () { touring++; showGhost(); });
+    input.addEventListener('input', function () { stopTour(); showGhost(); });
+    input.addEventListener('pointerdown', stopTour);
 
     input.addEventListener('keydown', function (event) {
+      if (event.key !== 'Shift' && event.key !== 'Control' && event.key !== 'Alt' && event.key !== 'Meta') stopTour();
       if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
         if (!history.length) return;
         event.preventDefault();
@@ -597,8 +585,8 @@
     document.addEventListener('click', function (event) {
       var button = event.target.closest && event.target.closest('[data-command]');
       if (!button) return;
-      touring++;
-      typeAndRun(button.getAttribute('data-command'));
+      stopTour();
+      run(button.getAttribute('data-command'));
       if (home && window.matchMedia('(pointer: fine)').matches) input.focus({ preventScroll: true });
     });
 
@@ -613,10 +601,9 @@
     if (!home) return;
     // Click empty space in the pane to focus the prompt, unless text is being selected.
     pane.addEventListener('click', function (event) {
-      if (event.target.closest('a, button') || String(window.getSelection())) return;
+      if (event.target.closest('a, button, summary, details') || String(window.getSelection())) return;
       input.focus({ preventScroll: true });
     });
-    Array.prototype.forEach.call(output.querySelectorAll('.block'), stagger);
     if (window.matchMedia('(pointer: fine)').matches) input.focus({ preventScroll: true });
 
     // index.html#!command runs that command: how the other pages hand over.
@@ -735,7 +722,7 @@
       var x = col * CELL, y = rowIndex * CELL;
       ctx.clearRect(x, y, CELL, CELL);
       if (Math.random() < 0.45) return; // leave gaps: a field, not a wall
-      ctx.globalAlpha = bright ? 0.5 : 0.08 + Math.random() * 0.14;
+      ctx.globalAlpha = bright ? 0.18 : 0.04 + Math.random() * 0.08;
       ctx.fillText(GLYPHS[Math.floor(Math.random() * GLYPHS.length)], x + CELL / 2, y + CELL / 2);
     }
 
@@ -768,11 +755,24 @@
         if (wave.col > 2) draw(wave.col - 3, wave.row, false);
         if (++wave.col >= cols + 3) wave = null;
       }
-    }, 70);
+    }, 350);
+  }
+
+  function initContents() {
+    var narrow = window.matchMedia('(max-width: 820px)');
+    document.querySelectorAll('.contents').forEach(function (details) {
+      function layout() { details.open = !narrow.matches; }
+      layout();
+      narrow.addEventListener('change', layout);
+      details.addEventListener('click', function (event) {
+        if (narrow.matches && event.target.closest('a, [data-command]')) details.open = false;
+      });
+    });
   }
 
   function init() {
     initTheme();
+    initContents();
     initTerminal();
     initDocsFilter();
     initCopy();
@@ -797,7 +797,7 @@
     same(respond('labels apply --period all').lines[4].segs[1][1], 'uv run mailbrief labels apply ' + findMan(['labels', 'apply'])[1], 'real-only man');
     same(respond('man labels retag').lines.length, 4, 'man page');
     same(respond('mailbrief status').lines, SCRIPTS.status, 'status is the simulation');
-    same(respond('setup').lines, SETUP, 'setup is the site guide');
+    same(respond('setup').go, 'setup.html', 'setup opens the full guide');
     same(respond('docs run').go, 'docs.html#cmd-run', 'docs jump');
     same(respond('CLEAR').clear, true, 'clear');
     same(complete('uv run mailbrief la'), 'uv run mailbrief labels', 'completion');

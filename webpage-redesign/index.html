@@ -36,9 +36,10 @@
 
 <main id="main" class="session">
   <aside class="rail" aria-label="Commands to try">
+    <details class="contents" open><summary>Commands to try</summary><div class="command-menu">
     <p class="rail-group needs-js">start</p>
     <button class="needs-js" type="button" data-command="about"><span>about</span><span class="hint">what it is</span></button>
-    <button class="needs-js" type="button" data-command="setup"><span>setup</span><span class="hint">6 steps</span></button>
+    <button class="needs-js" type="button" data-command="setup"><span>setup</span><span class="hint">full guide</span></button>
     <button class="needs-js" type="button" data-command="commands"><span>commands</span><span class="hint">all of them</span></button>
     <button class="needs-js" type="button" data-command="tour"><span>tour</span><span class="hint">▶ play</span></button>
     <p class="rail-group needs-js">simulate</p>
@@ -51,41 +52,33 @@
     <a href="setup.html"><span>setup guide</span><span class="hint">→</span></a>
     <a href="docs.html"><span>reference</span><span class="hint">→</span></a>
     <a href="https://github.com/KidCoderT/mail-manager" rel="noopener noreferrer"><span>source</span><span class="hint">↗</span></a>
+    </div></details>
   </aside>
 
   <section class="pane" id="playground" aria-labelledby="hero-title">
     <div class="hero">
-      <p class="boot">self-hosted · single user · MIT · built for fun, used every morning</p>
+      <p class="boot">self-hosted &middot; built for fun, used every morning</p>
       <h1 id="hero-title"><span class="wordmark" data-scramble>mailbrief</span><span class="cursor" aria-hidden="true"></span></h1>
       <p class="tagline">Less inbox. More morning.</p>
-      <p class="lede">Turns your new Outlook mail into one morning digest on Telegram, in a chat where you can also ask questions about your email.</p>
+      <p class="lede">Your Microsoft 365 Outlook mail, briefed each morning in Telegram. Ask questions about your inbox in the same chat.</p>
+      <p class="hero-actions"><a class="setup-link" href="setup.html">Set up MailBrief</a><a href="docs.html#privacy">Privacy &amp; limits</a></p>
       <p class="hero-hint needs-js">This page is a terminal. Type <button class="cmd-link" type="button" data-command="help">help</button>, or click a command.</p>
     </div>
 
     <div class="term-output" id="terminal-output" role="log" aria-live="polite" aria-label="Terminal output">
-      <div class="block block-new">
-        <div class="block-cmd"><span class="prompt" aria-hidden="true">❯</span><span>uv run mailbrief run</span></div>
+      <div class="block digest-preview">
+        <div class="block-cmd"><span class="prompt" aria-hidden="true">&#10095;</span><span>Your morning, in brief</span></div>
         <div class="block-out">
-          <div class="ln t-dim">[00:04] Signed in</div>
-          <div class="ln t-dim">[00:52] Classifying 9 emails with the AI…</div>
-          <div class="ln t-dim">[01:07] Labelling in Outlook 9/9</div>
-          <div class="ln t-dim">[01:30] ✓ Writing the new digest of 9 emails (32s)</div>
-          <div class="ln">&nbsp;</div>
-          <div class="ln"><span class="t-h">📬 9 new emails</span><span class="t-dim"> — FYI 4 · Newsletter 2 · Needs Reply 2 · Urgent 1</span></div>
-          <div class="ln">&nbsp;</div>
-          <div class="ln t-pink">TOP PRIORITIES TODAY</div>
-          <div class="ln">• Housing: the semester 2 acceptance fee is due Friday<span class="t-cyan">  ↗ open</span></div>
-          <div class="ln">&nbsp;</div>
-          <div class="ln t-pink">NEEDS A REPLY</div>
-          <div class="ln">• Dr Okafor asks whether you can help set up the lab demo on Thursday<span class="t-cyan">  ↗ open</span></div>
-          <div class="ln">&nbsp;</div>
-          <div class="ln t-pink">DEADLINES &amp; MEETINGS</div>
-          <div class="ln">• CS2040S problem set 4 is due Sun 23:59<span class="t-cyan">  ↗ open</span></div>
-          <div class="ln">&nbsp;</div>
-          <div class="ln t-pink">OPPORTUNITIES &amp; EVENTS</div>
-          <div class="ln">• ⭐ Campus HackDay sign-ups close on the 30th<span class="t-cyan">  ↗ open</span></div>
-          <div class="ln">&nbsp;</div>
-          <div class="ln t-dim">With --send, a real run delivers this digest to your Telegram.</div>
+          <p class="digest-meta">Telegram example &middot; 9 new emails &middot; invented mail</p>
+          <div class="digest-item"><span class="t-pink">Needs attention</span><p>Housing acceptance fee due Friday.</p></div>
+          <div class="digest-item"><span class="t-cyan">Needs a reply</span><p>Dr Okafor needs help with Thursday's lab demo.</p></div>
+          <div class="digest-item"><span class="t-violet">Coming up</span><p>CS2040S problem set due Sunday, 23:59.</p></div>
+          <details class="run-log"><summary>Behind the brief: a sample run</summary>
+            <div class="ln t-dim">[00:04] Signed in</div>
+            <div class="ln t-dim">[00:52] Classifying 9 emails with the AI...</div>
+            <div class="ln t-dim">[01:07] Labelling in Outlook 9/9</div>
+            <div class="ln t-dim">[01:30] Digest ready. With --send, delivered to Telegram.</div>
+          </details>
         </div>
       </div>
     </div>
@@ -98,11 +91,12 @@
     <span class="ghost" aria-hidden="true"></span>
     <input id="terminal-input" name="command" type="text" maxlength="120" placeholder="type help, about, or mailbrief run" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
   </div>
+  <button id="stop-tour" type="button" hidden>Stop tour</button>
   <button type="submit">run <kbd>⏎</kbd></button>
 </form>
 
 <footer class="statusbar">
-  <p><span class="pill">demo</span> Invented mail. Nothing runs or leaves this page.</p>
+  <p><span class="pill">demo</span> Invented mail. No commands run.</p>
   <p class="keys needs-js"><kbd>tab</kbd> complete <kbd>↑</kbd><kbd>↓</kbd> history</p>
   <nav aria-label="Footer">
     <a href="setup.html">setup</a>
