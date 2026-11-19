@@ -2,7 +2,17 @@
 // Everything here is an enhancement: without JS all content is still on the page.
 (function () {
   "use strict";
-  document.documentElement.classList.add("js");
+  var root = document.documentElement;
+  root.classList.add("js");
+
+  // ── theme toggle: the <head> script already applied the saved choice ──
+  document.querySelectorAll(".theme").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var next = root.dataset.theme === "dark" ? "light" : "dark";
+      root.dataset.theme = next;
+      try { localStorage.setItem("theme", next); } catch (e) { /* private mode: still switches */ }
+    });
+  });
 
   // ── copy buttons on code blocks ───────────────────────────────────────
   function copyText(text) {

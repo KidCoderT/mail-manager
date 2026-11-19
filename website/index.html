@@ -14,6 +14,7 @@
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2317212b'/%3E%3Crect x='5' y='10' width='22' height='15' rx='2' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3Cpath d='M6 12l10 7 10-7' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3Crect x='20' y='4' width='9' height='9' rx='2' fill='%23e2730c'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -37,6 +38,10 @@
         <li><a href="https://github.com/KidCoderT/mail-manager">GitHub</a></li>
       </ul>
     </nav>
+    <button class="theme" type="button" aria-label="Toggle light and dark theme" title="Toggle theme">
+      <svg class="sun" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.2M12 19.8V22M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2 12h2.2M19.8 12H22M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></svg>
+      <svg class="moon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg>
+    </button>
   </div>
 </header>
 
@@ -46,13 +51,15 @@
 <section class="hero">
   <div class="wrap">
     <div>
-      <h1>Your inbox, sorted and summarised before you open it.</h1>
-      <p class="lede">MailBrief reads your Outlook on the web inbox every morning, on your own machine. An AI model you choose classifies each new email. MailBrief labels the mail inside Outlook and sends a digest to your Telegram, where you can also ask it questions about your email.</p>
+      <p class="prompt-line" aria-hidden="true">~/mail-manager <b>$</b> uv run mailbrief run --send</p>
+      <h1>Your inbox, sorted and summarised before you open it<span class="cur" aria-hidden="true">_</span></h1>
+      <p class="lede">Every morning MailBrief reads your Outlook inbox on your own machine, has an AI you choose classify each new email, labels it in Outlook, and sends you a digest on Telegram. Then you can ask it questions about your mail.</p>
       <div class="actions">
         <a class="btn primary" href="setup.html">Set it up</a>
-        <a class="btn" href="https://github.com/KidCoderT/mail-manager">View the code on GitHub</a>
+        <a class="btn" href="https://github.com/KidCoderT/mail-manager">View on GitHub ↗</a>
       </div>
-      <p class="facts">Self-hosted, for one person, MIT licensed. Works with Microsoft 365 work and school accounts. It never deletes, moves, sends or marks anything as read. Unofficial: not affiliated with Microsoft or Telegram. <a href="#limits">Read the limits first.</a></p>
+      <ul class="badges"><li>self-hosted</li><li>single user</li><li>MIT</li><li>Microsoft 365</li><li>labels only, never deletes</li></ul>
+      <p class="facts">Unofficial: not affiliated with Microsoft or Telegram. It never deletes, moves, sends or marks anything as read. <a href="#limits">Read the limits first.</a></p>
     </div>
 
     <div class="scene" role="img" aria-label="Illustration: an inbox with MailBrief labels, and the digest message it sends. All emails are invented.">
@@ -97,12 +104,12 @@ TOP PRIORITIES TODAY
         <p class="intro">A university or work inbox mixes three things: the few emails that need you today, a steady stream of announcements, and newsletters with an event buried in the fourth paragraph. Sorting that by hand every morning takes time, and the costly mistakes are the quiet ones: a deadline you scrolled past, a professor still waiting for an answer.</p>
         <p>MailBrief does the first pass for you. It is a Python command-line tool you run yourself, for your own mailbox. It is aimed at students and staff with a Microsoft 365 account who are comfortable with a terminal and already have, or can get, an AI endpoint they trust with their email text.</p>
         <h3>What it does</h3>
-        <ul>
-          <li><b>Classifies every new email</b> into one of six categories (Urgent, Needs Reply, Meetings, FYI, Newsletter, Low Priority) with a priority from P1 to P5, a one-line summary, action items and a deadline.</li>
-          <li><b>Labels the mail inside Outlook</b> with coloured <code>MB:</code> categories that show on web, desktop and phone. Your own categories are left alone.</li>
-          <li><b>Applies labels you define:</b> course codes, particular senders, and topics you describe in plain words, each with an optional minimum priority.</li>
-          <li><b>Sends a digest to Telegram,</b> followed by a rolling 14-day calendar of the events your emails announce, including ones that only appear on a poster image.</li>
-          <li><b>Answers questions about your mail</b> in the same chat, quoting the emails, listing its sources, and linking each one back to the email in Outlook.</li>
+        <ul class="features">
+          <li><b>Classifies every new email</b> One of six categories (Urgent, Needs Reply, Meetings, FYI, Newsletter, Low Priority) with a priority from P1 to P5, a one-line summary, action items and a deadline.</li>
+          <li><b>Labels the mail inside Outlook</b> Coloured <code>MB:</code> categories that show on web, desktop and phone. Your own categories are left alone.</li>
+          <li><b>Applies labels you define</b> Course codes, particular senders, and topics you describe in plain words, each with an optional minimum priority.</li>
+          <li><b>Sends a digest to Telegram</b> Then a rolling 14-day calendar of the events your emails announce, including ones that only appear on a poster image.</li>
+          <li><b>Answers questions about your mail</b> In the same chat, quoting the emails, listing its sources, and linking each one back to the email in Outlook.</li>
         </ul>
       </div>
       <div>
@@ -608,16 +615,16 @@ uv run mailbrief serve --at "daily 07:30; sun 20:00 this-week"</pre></div>
     <p class="intro">MailBrief handles your email, so here is what it does with it, including the parts that are not private.</p>
 
     <ul class="facts-list">
-      <li><b>The browser is local.</b> Mail is read by a Chromium that runs on your machine, using the Outlook web session you already have. No app registration is needed, and no MailBrief server sits in the middle, because there is none.</li>
-      <li><b>It only adds labels.</b> The one change MailBrief makes in your mailbox is setting its own <code>MB:</code> categories. Every request to Outlook passes a check in code first; anything that would move, delete, send, mark as read or create a rule is refused before it leaves your machine. There is no delete code path.</li>
-      <li><b>Saved mail is encrypted at rest.</b> The session, the archive and the search index are encrypted with a key you generate. This protects copies of <code>data/</code> (backups, sync folders, an accidental commit). It does not protect against someone logged in to your computer as you, who can also read <code>.env</code>.</li>
-      <li><b>Email text goes to the AI endpoint you choose.</b> Classification sends each new email's text and some of its images. Chat sends your question and the text of about a dozen matching emails. Search sends email text to make vectors. What that provider keeps or logs is governed by its policy, not by MailBrief. An endpoint run by your own organisation, or a model on your own machine, keeps it closest to home.</li>
-      <li><b>Telegram sees what the bot sends.</b> Digests are summaries. Chat answers go further: they contain quotes, and files when you ask for them. Bot chats are not end-to-end encrypted. <code>CHAT=off</code> makes the bot send-only.</li>
-      <li><b>Linked images can be switched off.</b> To read event posters in newsletters, MailBrief downloads images the email links to. Those servers then see your IP address and when the mail was processed. Downloads are https only, refuse private network addresses, follow no redirects and carry no cookies. <code>REMOTE_IMAGES=off</code> stops them entirely.</li>
-      <li><b>Emails are treated as untrusted input.</b> The models that read email have no tools: they can only return text. Links are built by code from email ids, never taken from model output. A file is only sent if it is an attachment of an email the answer cited.</li>
-      <li><b>The bot answers only you.</b> Chats are registered from your terminal with <code>mailbrief add-destination</code>. The bot cannot add a chat itself and ignores everyone else silently. The bot token is a password: keep it in <code>.env</code>.</li>
-      <li><b>The phone sign-in page is optional.</b> <code>/login</code> opens a temporary page showing MailBrief's own browser on Microsoft's sign-in screen. The link works once, binds to the first browser that taps Start, requires https, closes after 10 minutes, and never shows your inbox. With the optional <code>LOGIN_TUNNEL=cloudflared</code>, the tunnel provider can see that page's traffic, including what you type.</li>
-      <li><b>A cloud host is a third party.</b> If you run MailBrief on a rented server, that host holds your archive, your session and the key that decrypts them. Your own always-on PC or your own server is what keeps mail in-house.</li>
+      <li><details><summary>The browser is local.</summary><p>Mail is read by a Chromium that runs on your machine, using the Outlook web session you already have. No app registration is needed, and no MailBrief server sits in the middle, because there is none.</p></details></li>
+      <li><details><summary>It only adds labels.</summary><p>The one change MailBrief makes in your mailbox is setting its own <code>MB:</code> categories. Every request to Outlook passes a check in code first; anything that would move, delete, send, mark as read or create a rule is refused before it leaves your machine. There is no delete code path.</p></details></li>
+      <li><details><summary>Saved mail is encrypted at rest.</summary><p>The session, the archive and the search index are encrypted with a key you generate. This protects copies of <code>data/</code> (backups, sync folders, an accidental commit). It does not protect against someone logged in to your computer as you, who can also read <code>.env</code>.</p></details></li>
+      <li><details><summary>Email text goes to the AI endpoint you choose.</summary><p>Classification sends each new email's text and some of its images. Chat sends your question and the text of about a dozen matching emails. Search sends email text to make vectors. What that provider keeps or logs is governed by its policy, not by MailBrief. An endpoint run by your own organisation, or a model on your own machine, keeps it closest to home.</p></details></li>
+      <li><details><summary>Telegram sees what the bot sends.</summary><p>Digests are summaries. Chat answers go further: they contain quotes, and files when you ask for them. Bot chats are not end-to-end encrypted. <code>CHAT=off</code> makes the bot send-only.</p></details></li>
+      <li><details><summary>Linked images can be switched off.</summary><p>To read event posters in newsletters, MailBrief downloads images the email links to. Those servers then see your IP address and when the mail was processed. Downloads are https only, refuse private network addresses, follow no redirects and carry no cookies. <code>REMOTE_IMAGES=off</code> stops them entirely.</p></details></li>
+      <li><details><summary>Emails are treated as untrusted input.</summary><p>The models that read email have no tools: they can only return text. Links are built by code from email ids, never taken from model output. A file is only sent if it is an attachment of an email the answer cited.</p></details></li>
+      <li><details><summary>The bot answers only you.</summary><p>Chats are registered from your terminal with <code>mailbrief add-destination</code>. The bot cannot add a chat itself and ignores everyone else silently. The bot token is a password: keep it in <code>.env</code>.</p></details></li>
+      <li><details><summary>The phone sign-in page is optional.</summary><p><code>/login</code> opens a temporary page showing MailBrief's own browser on Microsoft's sign-in screen. The link works once, binds to the first browser that taps Start, requires https, closes after 10 minutes, and never shows your inbox. With the optional <code>LOGIN_TUNNEL=cloudflared</code>, the tunnel provider can see that page's traffic, including what you type.</p></details></li>
+      <li><details><summary>A cloud host is a third party.</summary><p>If you run MailBrief on a rented server, that host holds your archive, your session and the key that decrypts them. Your own always-on PC or your own server is what keeps mail in-house.</p></details></li>
     </ul>
   </div>
 </section>

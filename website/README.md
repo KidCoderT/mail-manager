@@ -18,6 +18,6 @@ uv run playwright install chromium --no-shell
 uv run python scripts/check_website.py
 ```
 
-Checks local files and anchors, JavaScript errors, example tabs and keyboard navigation, canned chat, copy controls, narrow layouts, dark mode, and the page without JavaScript. It opens the files directly in headless Chromium; no server or accounts are needed.
+Checks local files and anchors, JavaScript errors, example tabs and keyboard navigation, canned chat, copy controls, narrow layouts, dark mode, the light/dark toggle, and the page without JavaScript. It opens the files directly in headless Chromium; no server or accounts are needed.
 
 `assets/showcase.png` is a screenshot of the site's invented inbox/chat illustration, used in the repository README. It contains no real mail.

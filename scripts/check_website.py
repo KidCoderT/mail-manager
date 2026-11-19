@@ -54,6 +54,11 @@ def check():
                             assert page.locator("h1").count() == 1
                             assert page.locator("body").evaluate("e => e.scrollWidth <= innerWidth"), (name, theme, width)
                             if javascript:
+                                assert page.evaluate("document.documentElement.dataset.theme") == theme
+                                page.locator(".theme").click()
+                                flipped = {"light": "dark", "dark": "light"}[theme]
+                                assert page.evaluate("[document.documentElement.dataset.theme, localStorage.theme]") == [flipped, flipped]
+                                page.evaluate("localStorage.clear()")
                                 for tab in page.get_by_role("tab").all():
                                     tab.click()
                                     panel = page.locator("#" + tab.get_attribute("aria-controls"))
