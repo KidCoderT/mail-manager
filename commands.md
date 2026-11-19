@@ -125,7 +125,7 @@ The same as **`/login`** in Telegram. Use it when MailBrief runs on a server (Ra
 ## 3. `mailbrief run`
 
 ```
-uv run mailbrief run [--all] [--backfill] [--digest SCOPE] [--json] [--send] [--commit] [--no-password] [--quiet]
+uv run mailbrief run [--all] [--backfill] [--digest SCOPE] [--as-of DATE] [--json] [--send] [--commit] [--no-password] [--quiet]
 ```
 
 **What it does (default):** opens Outlook headless and finds emails that arrived since the last *committed* run. For each one it:
@@ -233,6 +233,7 @@ Chooses **what the digest summarises**. Default: `new`.
 - `--send` sends whichever digest was written.
 - The digest is saved with its scope, and `mailbrief emails --digest` shows it, e.g. `── this month digest, written 17 Oct 09:12 ──`.
 - If the scope has no emails: `No emails for a '<scope>' digest.`, and nothing is sent.
+- `--as-of YYYY-MM-DD` counts the period from that day instead of today. `serve` adds it when it catches up a summary it missed (a Sunday `this-week` slot run on Monday still covers that Sunday's week).
 
 ```
 uv run mailbrief run --digest this-month             # month summary, printed

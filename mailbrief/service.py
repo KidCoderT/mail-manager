@@ -100,9 +100,12 @@ def next_slot(now: datetime, schedule: list[dict]) -> datetime | None:
     return min((at for at, _ in _slots(schedule, now, now + timedelta(days=LOOKBACK_DAYS))), default=None)
 
 
-def run_args(scope: str) -> list[str]:
-    """'new' advances the cursor; a period summary doesn't, so it never swallows emails the next daily digest needs."""
-    return ["run", "--send", "--quiet"] + (["--commit"] if scope == "new" else ["--digest", scope])
+def run_args(scope: str, at: datetime | None = None) -> list[str]:
+    """'new' advances the cursor; a period summary doesn't, so it never swallows emails the next daily digest needs.
+    A period summary gets its slot's date: caught up a day late, 'this-week' must still mean the slot's week."""
+    if scope == "new":
+        return ["run", "--send", "--quiet", "--commit"]
+    return ["run", "--send", "--quiet", "--digest", scope] + (["--as-of", at.date().isoformat()] if at else [])
 
 
 # ── locks and state ───────────────────────────────────────────────────────────────────────────────
@@ -176,9 +179,9 @@ def _python() -> str:
     return str(exe.with_name("python.exe")) if exe.name.lower() == "pythonw.exe" else str(exe)
 
 
-def _run_child(scope: str) -> int:
+def _run_child(scope: str, at: datetime | None = None) -> int:
     """One scheduled run as a child process; its output goes to the log (and the screen). Returns its exit code."""
-    cmd = [_python(), "-m", "mailbrief.main", *run_args(scope)]
+    cmd = [_python(), "-m", "mailbrief.main", *run_args(scope, at)]
     if os.name == "nt":  # own process group: your Ctrl+C reaches serve only, which lets the run finish
         extra = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
     else:
@@ -298,7 +301,7 @@ def _serve(spec: str, schedule: list[dict]) -> int:
                 for at, scope in due:
                     log(f"run started ({scope}, slot {at:%a %d %b %H:%M})")
                     t0 = time.monotonic()
-                    code = _run_child(scope)
+                    code = _run_child(scope, at)
                     secs = int(time.monotonic() - t0)
                     result = {0: "ok", 2: "login needed", 4: "sent, but not marked processed (cursor kept)"}.get(code, f"failed (exit {code})")
                     log(f"run finished: {result} in {secs}s")

@@ -55,6 +55,7 @@ def run(
     backfill=False,
     digest_scope=None,
     quiet=False,
+    as_of=None,
 ) -> int:
     from playwright.sync_api import sync_playwright
 
@@ -289,7 +290,7 @@ def run(
 
     text, t_digest, digest_emails = None, 0.0, []
     if scope:
-        digest_emails = digest_set(scope, targets, cursor, tz, log, retry)
+        digest_emails = digest_set(scope, targets, cursor, tz, log, retry, as_of)
         if digest_emails:
             t2 = time.time()
             parts = (len(digest_emails) + 24) // 25 if len(digest_emails) > 40 else 1
@@ -374,8 +375,9 @@ def run(
     return 0
 
 
-def digest_set(scope: str, targets: list[dict], cursor: dict, tz, log, retry=frozenset()) -> list[dict]:
-    """The emails a digest of `scope` covers: new since the cursor, or an archive period ("all" = everything)."""
+def digest_set(scope: str, targets: list[dict], cursor: dict, tz, log, retry=frozenset(), as_of=None) -> list[dict]:
+    """The emails a digest of `scope` covers: new since the cursor, or an archive period ("all" = everything).
+    as_of: the day the period is counted from (default today); `serve` passes a missed slot's own date."""
     from mailbrief import archive
     from mailbrief import cursor as cur
 
@@ -384,7 +386,7 @@ def digest_set(scope: str, targets: list[dict], cursor: dict, tz, log, retry=fro
             targets, cursor, retry
         )  # with --all, targets is the whole inbox; the digest stays on new mail
     else:
-        today = datetime.now(tz).date()
+        today = as_of or datetime.now(tz).date()
         emails = [
             e
             for e in archive.load()[0]
@@ -1146,6 +1148,13 @@ def main() -> None:
         help="what the digest covers: new (default: since the last commit), this-week, this-month, "
         "last-month, older, all (read from the saved archive)",
     )
+    run_p.add_argument(
+        "--as-of",
+        type=date.fromisoformat,
+        metavar="YYYY-MM-DD",
+        help="with --digest this-week/this-month/â€¦: count the period from this day instead of today "
+        "(serve uses it to catch up a missed summary)",
+    )
     em_p = sub.add_parser(
         "emails", help="browse saved emails (this week by default), grouped by thread"
     )
@@ -1393,6 +1402,7 @@ def main() -> None:
                 backfill=args.backfill,
                 digest_scope=args.digest_scope,
                 quiet=args.quiet,
+                as_of=args.as_of,
             )
     except Busy:
         print(

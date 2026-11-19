@@ -60,6 +60,9 @@ def test_weekends_and_next_slot():
 def test_run_args_commit_only_for_new():
     assert run_args("new") == ["run", "--send", "--quiet", "--commit"]
     assert run_args("this-week") == ["run", "--send", "--quiet", "--digest", "this-week"]
+    # A weekly summary caught up on Monday still covers the week of its Sunday slot.
+    assert run_args("this-week", at("2026-10-18 20:00"))[-2:] == ["--as-of", "2026-10-18"]
+    assert "--as-of" not in run_args("new", at("2026-10-18 20:00"))
 
 
 def test_lock_is_exclusive_and_released():
