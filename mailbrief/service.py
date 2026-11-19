@@ -22,6 +22,8 @@ from contextlib import contextmanager
 from datetime import datetime, time as clock, timedelta
 from pathlib import Path
 
+from mailbrief.storage.files import replace
+
 DATA = Path("data")
 STATE_PATH = DATA / "schedule.json"
 STOP_PATH = DATA / "stop.request"
@@ -148,10 +150,14 @@ def load_state() -> dict:
 
 
 def save_state(state: dict) -> None:
-    DATA.mkdir(exist_ok=True)
-    tmp = STATE_PATH.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, indent=2))
-    tmp.replace(STATE_PATH)
+    """Never raises: schedule.json is bookkeeping, and a write that fails must not take `serve` down."""
+    try:
+        DATA.mkdir(exist_ok=True)
+        tmp = STATE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state, indent=2))
+        replace(tmp, STATE_PATH)
+    except OSError as e:
+        log(f"warning: schedule.json not saved ({type(e).__name__}); trying again at the next change")
 
 
 def _tz():

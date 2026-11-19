@@ -9,6 +9,8 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from mailbrief.storage.files import replace
+
 CURSOR_PATH = Path("data/cursor.json")
 FIRST_RUN_LOOKBACK = timedelta(hours=24)
 KEEP_IDS = 500
@@ -51,4 +53,4 @@ def save(cursor: dict) -> None:
     CURSOR_PATH.parent.mkdir(exist_ok=True)
     tmp = CURSOR_PATH.with_suffix(".tmp")
     tmp.write_text(json.dumps(cursor))
-    tmp.replace(CURSOR_PATH)
+    replace(tmp, CURSOR_PATH)

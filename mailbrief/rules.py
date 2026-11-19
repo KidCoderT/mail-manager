@@ -8,6 +8,8 @@ import json
 import re
 from pathlib import Path
 
+from mailbrief.storage.files import replace
+
 RULES_PATH = Path("data/rules.json")
 KINDS = ("courses", "senders", "topics")
 RESERVED = {"urgent", "needs reply", "fyi", "meetings", "newsletter", "low priority", "unclassified",
@@ -111,7 +113,7 @@ def save(r: dict, path: Path | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(r, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(path)  # atomic, like the archive
+    replace(tmp, path)  # atomic, like the archive
 
 
 def _key(kind: str, rule: dict) -> str:

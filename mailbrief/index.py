@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from operator import mul
 from pathlib import Path
 
+from mailbrief.storage.files import replace
+
 from mailbrief.storage.crypto import decrypt, encrypt
 
 INDEX_PATH = Path("data/index.enc")
@@ -111,7 +113,7 @@ def save(data: dict, path: Path | None = None) -> None:
     out = {**data, "items": {i: {"hash": it["hash"], "vecs": [_pack(v) for v in it["vecs"]]} for i, it in data["items"].items()}}
     tmp = path.with_suffix(".enc.tmp")
     tmp.write_bytes(encrypt(out))
-    tmp.replace(path)  # atomic: a reader (the chat bot) sees the old or the new index, never half of one
+    replace(tmp, path)  # atomic: a reader (the chat bot) sees the old or the new index, never half of one
 
 
 def update(emails: list[dict], log=None, embed=None, path: Path | None = None, rebuild: bool = False) -> tuple[int, int]:

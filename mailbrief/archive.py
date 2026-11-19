@@ -11,6 +11,8 @@ import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from mailbrief.storage.files import replace
+
 from cryptography.fernet import InvalidToken
 
 from mailbrief.storage.crypto import decrypt, encrypt
@@ -55,7 +57,7 @@ def _write_month(month: str, data: dict, plain: bool) -> Path:
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     else:
         tmp.write_bytes(encrypt(data))
-    tmp.replace(path)  # atomic: a crash mid-write never leaves a broken file
+    replace(tmp, path)  # atomic: a crash mid-write never leaves a broken file
     _path(month, not plain).unlink(missing_ok=True)  # one file per month
     return path
 

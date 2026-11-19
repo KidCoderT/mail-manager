@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from mailbrief.storage.files import replace
+
 from mailbrief.storage.crypto import decrypt, encrypt
 
 # ponytail: single user, single file; per-user paths + sessions table when multi-user lands
@@ -18,4 +20,4 @@ def save(context, user_agent: str) -> None:
     blob = encrypt({"state": context.storage_state(), "user_agent": user_agent})
     tmp = SESSION_PATH.with_suffix(".tmp")
     tmp.write_bytes(blob)
-    tmp.replace(SESSION_PATH)  # atomic: a crash mid-write never leaves a broken session
+    replace(tmp, SESSION_PATH)  # atomic: a crash mid-write never leaves a broken session
