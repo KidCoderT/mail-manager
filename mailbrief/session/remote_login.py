@@ -43,7 +43,7 @@ class Window:
         self.cookie = None
         self.expires = time.monotonic() + ttl
         self.secure = secure
-        self.state = "open"  # open → done | closed
+        self.state = "open"  # open → done | failed (signed in, but it didn't stick) | expired (ran out of time)
         self.frame = b""
         self.hidden = False  # the browser is on Outlook itself: no picture
         self.inputs: queue.Queue = queue.Queue()
@@ -51,6 +51,12 @@ class Window:
 
     def live(self) -> bool:
         return self.state == "open" and time.monotonic() < self.expires
+
+    def status(self) -> str:
+        """What the page shows: open | hidden (on Outlook itself: no picture) | done | failed | expired."""
+        if self.state != "open":
+            return self.state
+        return ("hidden" if self.hidden else "open") if self.live() else "expired"
 
     def bind(self, token) -> str | None:
         """The first correct token becomes a cookie; the token can never be used again."""
@@ -109,6 +115,11 @@ input[type=text],input[type=password]{{font-size:16px;width:60%;padding:8px}}#ms
 <script nonce="{n}">
 const tok = location.hash.slice(1); history.replaceState(null, '', location.pathname);
 const $ = id => document.getElementById(id), msg = t => $('msg').textContent = t;
+const AGAIN = ' Start a new sign-in: send /login to your bot in Telegram, or run "mailbrief login --remote".';
+const ENDS = {{done: 'Signed in ✅ You can close this page.',
+  expired: 'This sign-in ran out of time ({mins} minutes).' + AGAIN,
+  failed: 'You signed in, but Outlook did not keep the sign-in. Tick "Stay signed in" next time.' + AGAIN,
+  closed: 'This sign-in page has closed.' + AGAIN}};
 const post = (path, o) => fetch(path, {{method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify(o)}});
 function screen() {{ $('start').hidden = true; $('screen').hidden = false; msg('Sign in as usual. Tick "Stay signed in".'); tick(); }}
 async function tick() {{
@@ -116,8 +127,7 @@ async function tick() {{
   if (s.state === 'hidden') {{ $('screen').hidden = true;
     msg('Opening your inbox… the picture is hidden from here on, for privacy.'); return setTimeout(tick, 1000); }}
   if ($('screen').hidden && s.state === 'open') return screen();
-  if (s.state !== 'open') {{ $('screen').hidden = true;
-    return msg(s.state === 'done' ? 'Signed in ✅ You can close this page.' : 'This sign-in window has closed. Send /login again if you still need to sign in.'); }}
+  if (s.state !== 'open') {{ $('screen').hidden = true; return msg(ENDS[s.state] || ENDS.closed); }}
   $('shot').src = '/frame?' + Date.now();
 }}
 $('shot').onload = () => setTimeout(tick, 500); $('shot').onerror = () => setTimeout(tick, 1000);
@@ -128,9 +138,9 @@ $('f').onsubmit = e => {{ e.preventDefault(); if ($('box').value) post('/input',
 $('show').onchange = () => $('box').type = $('show').checked ? 'text' : 'password';
 document.querySelectorAll('[data-key]').forEach(b => b.onclick = () => post('/input', {{type: 'key', key: b.dataset.key}}));
 $('go').onclick = async () => {{ const r = await post('/login', {{token: tok}});
-  r.ok ? screen() : msg('This link has already been used or has expired. Send /login again.'); }};
+  r.ok ? screen() : msg('This link has already been used or has expired.' + AGAIN); }};
 if (tok) {{ $('start').hidden = false; msg('Tap Start to open the sign-in browser. This link works once.'); }}
-else fetch('/status').then(r => r.ok ? screen() : msg('This sign-in window has closed. Send /login again.'));
+else fetch('/status').then(r => r.ok ? screen() : msg(ENDS.closed));
 </script></body></html>"""
 
 
@@ -196,10 +206,10 @@ def handler(win):
                 nonce = secrets.token_urlsafe(16)
                 csp = f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; img-src 'self'; " \
                       "connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'"
-                self._send(200, PAGE.format(n=nonce).encode(), "text/html; charset=utf-8", {"Content-Security-Policy": csp})
+                page = PAGE.format(n=nonce, mins=WINDOW_S // 60)
+                self._send(200, page.encode(), "text/html; charset=utf-8", {"Content-Security-Policy": csp})
             elif path == "/status" and self._mine(win):
-                self._send(200, json.dumps({"state": "done" if win.state == "done" else ("hidden" if win.hidden else "open") if win.live() else "closed"}).encode(),
-                           "application/json")
+                self._send(200, json.dumps({"state": win.status()}).encode(), "application/json")
             elif path == "/frame" and win.live() and self._mine(win) and win.frame:
                 self._send(200, win.frame, "image/jpeg")
             else:
@@ -414,7 +424,7 @@ def run(say, show_link, ttl: float = WINDOW_S) -> bool:
         else:
             server, url = listen(url, local, handler(win))
             threading.Thread(target=server.serve_forever, daemon=True).start()
-        ok, proc, other = False, None, None
+        ok, proc, other, signed_in = False, None, None, False
         try:
             if server is not None and local and use_tunnel():
                 proc, url = tunnel(server.server_address[1])
@@ -430,6 +440,7 @@ def run(say, show_link, ttl: float = WINDOW_S) -> bool:
                     show_link(f"{url}/login#{win.token}")
                     page.goto(INBOX_URL, wait_until="domcontentloaded")
                     if drive(win, page, lambda pg: pg.locator(MESSAGE_ROW).count() > 0):
+                        signed_in = True
                         page.wait_for_timeout(3000)  # let Outlook finish setting its cookies
                         # Checked from memory first: a sign-in that doesn't work must not replace a saved one that does.
                         check = browser.new_context(storage_state=context.storage_state(), user_agent=ua)
@@ -444,7 +455,8 @@ def run(say, show_link, ttl: float = WINDOW_S) -> bool:
                 finally:
                     browser.close()
         finally:
-            win.state = "done" if ok else "closed"
+            # From what happened, not from the clock: a check that fails just after the 10 minutes is still "failed".
+            win.state = "done" if ok else "failed" if signed_in else "expired"
             time.sleep(2)  # the page's next status poll shows "Signed in ✅"
             if proc is not None:
                 stop(proc)  # the trycloudflare address dies with the window
@@ -458,7 +470,7 @@ def run(say, show_link, ttl: float = WINDOW_S) -> bool:
         if other:  # the saved emails, labels and rules belong to the mailbox used before
             say(f"⚠️ This is a different account from before: MailBrief now reads {other}. If that wasn't "
                 "intended, sign in again with the usual account.")
-    elif time.monotonic() >= win.expires:
+    elif not signed_in:
         say("The sign-in window timed out before you signed in. Send /login to try again.")
     else:
         say("The sign-in didn't stick (Outlook didn't accept the saved login). Send /login to try again.")

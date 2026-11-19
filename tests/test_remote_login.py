@@ -132,6 +132,13 @@ def test_done_state_is_shown_then_frames_stop():
         win.state = "done"
         assert json.loads(call(s, "GET", "/status", cookie=cookie)[2]) == {"state": "done"}
         assert call(s, "GET", "/frame", cookie=cookie)[0] == 404
+        # Each ending has its own word, so the page can say what happened and what to do.
+        win.state = "failed"
+        assert json.loads(call(s, "GET", "/status", cookie=cookie)[2]) == {"state": "failed"}
+        late = rl.Window(ttl=0)
+        assert late.status() == "expired" and rl.Window().status() == "open"
+        page = call(s, "GET", "/login", cookie=cookie)[2].decode()
+        assert "ran out of time (10 minutes)" in page and "mailbrief login --remote" in page
     finally:
         s.shutdown()
         s.server_close()
