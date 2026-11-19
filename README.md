@@ -647,7 +647,7 @@ AI_ANSWER_MODEL=qwen3.8:27b     # writes the cited answers
 - **The chat answer model reads email bodies** (§3.9), so an injected email could try to mislead an answer. It has no tools, can only reply in your chat, never writes links (code builds them from email ids), and any file it suggests is checked in code against the emails it cited.
 - **The only change MailBrief makes in Outlook is its own `MB:` categories** (§3.4), enforced by `check_request` before any request leaves the machine.
 - Email content is saved only in the local archive: encrypted by default and kept until you set `ARCHIVE_DAYS`. The encryption protects copies of `data/` (sync, backups, indexers, an accidental commit). It doesn't protect against someone logged into your Windows account, who also has `.env`.
-- The AI provider is configured for zero retention.
+- Email text is sent to the endpoint in `AI_BASE_URL`. What that endpoint keeps, and for how long, is its operator's policy: read it before you point MailBrief there. Running the model yourself, or using one your organisation runs, is what keeps the text in-house.
 - Check your employer's acceptable-use policy before automating a work account.
 
 ---
