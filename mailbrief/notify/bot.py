@@ -91,13 +91,13 @@ class Bot:
         if "callback_query" in update:
             q = update["callback_query"]
             chat = (q.get("message") or {}).get("chat")
-            if not self.allowed(chat):
+            if chat is None or not self.allowed(chat):
                 return
             self._button(str(chat["id"]), q)
             return
         msg = update.get("message") or {}
         chat = msg.get("chat")
-        if not self.allowed(chat):
+        if chat is None or not self.allowed(chat):
             return  # strangers and groups learn nothing, not even that the bot is alive
         text = (msg.get("text") or "").strip()
         chat_id = str(chat["id"])
@@ -326,7 +326,7 @@ class Bot:
                 pass
         for u in updates:
             chat = (u.get("message") or (u.get("callback_query") or {}).get("message") or {}).get("chat")
-            if not self.allowed(chat):
+            if chat is None or not self.allowed(chat):
                 ignored += 1
                 continue
             self.handle(u)

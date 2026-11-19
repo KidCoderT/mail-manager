@@ -86,9 +86,9 @@ def run(
     progress.step("Loading saved emails…")
     try:
         archived = {e["id"]: e for e in archive.load()[0]}
-    except archive.ArchiveError as e:
+    except archive.ArchiveError as err:
         print(
-            f"warning: {e}; continuing without reusing saved classifications", file=log
+            f"warning: {err}; continuing without reusing saved classifications", file=log
         )
         archived = {}
 
@@ -96,8 +96,8 @@ def run(
 
     try:
         your_rules = rules.load()
-    except rules.RulesError as e:  # a typo in rules.json must not stop the digest
-        print(f"warning: {e}; using no rules this run (fix data/rules.json)", file=log)
+    except rules.RulesError as err:  # a typo in rules.json must not stop the digest
+        print(f"warning: {err}; using no rules this run (fix data/rules.json)", file=log)
         your_rules = rules.empty()
 
     cursor = cur.load()
@@ -141,7 +141,7 @@ def run(
     t_read = time.time() - t0
 
     total = result["total"] if result["total"] is not None else "?"
-    window = "all" if show_all else f"since {start.astimezone(tz):%Y-%m-%d %H:%M}"
+    window = "all" if start is None else f"since {start.astimezone(tz):%Y-%m-%d %H:%M}"
     print(
         f"{len(targets)} inbox emails ({window}), {len(todo)} need the AI, {len(targets) - len(todo)} already saved; "
         f"inbox: {len(result['messages'])} of {total} conversations; {len(records) - len(inbox)} of your replies / other-folder messages.",
@@ -277,8 +277,8 @@ def run(
     saved = True
     try:  # an old month not deleted (a typo in ARCHIVE_DAYS) must not stop this run's emails being saved
         archive.prune(datetime.now(tz).date())
-    except Exception as e:  # noqa: BLE001
-        print(f"warning: old archive months not pruned ({type(e).__name__}: {e}); check ARCHIVE_DAYS", file=log)
+    except Exception as err:  # noqa: BLE001
+        print(f"warning: old archive months not pruned ({type(err).__name__}: {err}); check ARCHIVE_DAYS", file=log)
     try:  # a failure here must not lose the digest or block delivery (but the cursor stays: see below)
         progress.step("Saving to the archive…")
         # List previews (GetItem failed) are not saved: they're keyed by conversation, so the real emails
@@ -288,9 +288,9 @@ def run(
         kind = "plain JSON" if plain else "encrypted"
         names = ", ".join(p.name for p in paths) or "nothing new"
         saved_msg = f"Saved ({kind}): {names} in {archive.ARCHIVE_DIR}  (view with `mailbrief emails`)"
-    except Exception as e:  # noqa: BLE001
+    except Exception as err:  # noqa: BLE001
         saved = False
-        saved_msg = f"warning: archive not saved ({type(e).__name__}: {e})"
+        saved_msg = f"warning: archive not saved ({type(err).__name__}: {err})"
     else:
         from mailbrief import labels
 
@@ -324,8 +324,8 @@ def run(
             t_digest = time.time() - t2
             try:
                 archive.save([], [], text, plain, tz, digest_scope=scope, digest_refs=digest_refs(digest_emails))
-            except Exception as e:  # noqa: BLE001
-                saved_msg += f"; warning: digest not saved ({type(e).__name__}: {e})"
+            except Exception as err:  # noqa: BLE001
+                saved_msg += f"; warning: digest not saved ({type(err).__name__}: {err})"
 
     results = [e["classification"] for e in targets]
     if as_json:
@@ -372,7 +372,8 @@ def run(
     delivered = deliver(links.to_html(text, digest_refs(digest_emails)), log, html=True) if send and text else True
     if send and text and delivered and events_text:
         events_html = events.build(datetime.now(tz).date(), new_ids, log, html=True)
-        deliver(events_html, log, html=True)  # a failure is reported, but never holds back the cursor
+        if events_html:
+            deliver(events_html, log, html=True)  # a failure is reported, but never holds back the cursor
     if commit or backfill:
         if not delivered:
             print(
@@ -384,8 +385,8 @@ def run(
             return 4
         try:
             cur.save(cur.advance(cursor, targets))
-        except ValueError as e:  # previews only: the digest went out, but these emails must be read again
-            print(f"Cursor not advanced: {e}", file=log)
+        except ValueError as err:  # previews only: the digest went out, but these emails must be read again
+            print(f"Cursor not advanced: {err}", file=log)
             return 4  # not 1: rerunning would send the same digest again (serve retries 1, not 4)
         print("Cursor advanced: these emails won't be processed again.", file=log)
     return 0
@@ -443,9 +444,9 @@ def deliver(text: str, log, html: bool = False) -> bool:
                 f"Sent to {d['type']}: {d['label']} ({n} message{'s' if n != 1 else ''})",
                 file=log,
             )
-        except Exception as e:  # noqa: BLE001 - report and continue with the next destination
+        except Exception as err:  # noqa: BLE001 - report and continue with the next destination
             print(
-                f"Failed to send to {d['type']}: {d['label']} ({type(e).__name__}: {e})",
+                f"Failed to send to {d['type']}: {d['label']} ({type(err).__name__}: {err})",
                 file=log,
             )
     return sent > 0
@@ -475,8 +476,8 @@ def show_emails(period, day, search, show, thread, digest, export, send=False) -
     try:
         all_emails, all_digests = archive.load()
         on_day = date.fromisoformat(day) if day else None
-    except archive.ArchiveError as e:
-        print(e)
+    except archive.ArchiveError as err:
+        print(err)
         return 1
     except ValueError:
         print(f"--day must look like {today.isoformat()}")
@@ -648,8 +649,8 @@ def labels_command(args) -> int:
     try:
         emails = archive.load()[0]
         rules.load()
-    except (archive.ArchiveError, rules.RulesError) as e:
-        print(e)
+    except (archive.ArchiveError, rules.RulesError) as err:
+        print(err)
         return 1
 
     if args.action == "clear" and args.label:
@@ -701,7 +702,7 @@ def labels_command(args) -> int:
             shown = (
                 labels.labels_for(e)
                 if args.action == "apply"
-                else e.get("outlook_labels")
+                else e.get("outlook_labels") or []
             )
             print(
                 f"  {e['received_at'].astimezone(tz):%d %b %H:%M}  {', '.join(shown)}  {e['subject'][:60]}"
@@ -754,8 +755,8 @@ def _locked(action) -> int:
     except Busy:
         print("A MailBrief run is in progress; try again when it finishes.")
         return 3
-    except labels.LoginNeeded as e:
-        print(f"Can't open Outlook: {e}")
+    except labels.LoginNeeded as err:
+        print(f"Can't open Outlook: {err}")
         return 2
     return 0
 
@@ -837,7 +838,7 @@ def _retag(args, emails: list[dict], today, tz) -> int:
     def work() -> str:
         from mailbrief import web_images
 
-        images = {e["id"]: [] for e in targets}
+        images: dict[str, list[str]] = {e["id"]: [] for e in targets}
         # Images are never saved, so they're fetched again; linked ones need the HTML from Outlook too.
         if web_images.enabled() or any(e.get("image_attachments") for e in targets):
             from mailbrief.browser.outlook_reader import collect_images
@@ -869,8 +870,8 @@ def _retag(args, emails: list[dict], today, tz) -> int:
                 except ConfigError:  # no AI key: nothing will work, say so once
                     ex.shutdown(wait=False, cancel_futures=True)
                     raise
-                except Exception as e:  # noqa: BLE001 - one failed call keeps that email's old classification
-                    failed, why = failed + 1, f"{type(e).__name__}: {e}"
+                except Exception as err:  # noqa: BLE001 - one failed call keeps that email's old classification
+                    failed, why = failed + 1, f"{type(err).__name__}: {err}"
                 done += 1
                 progress.count("Re-tagging", done, len(targets))
         if failed:
@@ -894,8 +895,8 @@ def rules_command(args, out=None) -> int:
 
     try:
         current = rules.load()
-    except rules.RulesError as e:
-        say(f"{e}\nFix {rules.RULES_PATH} by hand (it's plain JSON).")
+    except rules.RulesError as err:
+        say(f"{err}\nFix {rules.RULES_PATH} by hand (it's plain JSON).")
         return 1
     try:
         emails = archive.load()[0]
@@ -969,8 +970,8 @@ def rules_command(args, out=None) -> int:
             return 2
         try:
             new = rules.add(current, kind, rule)
-        except rules.RulesError as e:
-            say(e)
+        except rules.RulesError as err:
+            say(err)
             return 2
         label = rules.label_name(kind, new[kind][-1])
         msg = f"✅ Added {label}."
@@ -993,8 +994,8 @@ def rules_command(args, out=None) -> int:
         tail = f'Emails already labelled keep it; remove it with `mailbrief labels clear --label "{label[4:]}"`{on_pc}.'
     try:
         rules.save(new)
-    except rules.RulesError as e:
-        say(e)
+    except rules.RulesError as err:
+        say(err)
         return 2
     say(f"{msg}\n{tail}")
     return 0
@@ -1014,8 +1015,8 @@ def index_command(action: str) -> int:
         return 0
     try:
         emails = archive.load()[0]
-    except archive.ArchiveError as e:
-        print(e)
+    except archive.ArchiveError as err:
+        print(err)
         return 1
     from mailbrief.service import Busy, lock
 
@@ -1054,8 +1055,8 @@ def chat_command(question: str | None) -> int:
                 return 0
         try:
             emails = archive.load()[0]
-        except archive.ArchiveError as e:
-            print(e)
+        except archive.ArchiveError as err:
+            print(err)
             return 1
         t0 = time.time()
         result = answer.ask(q, history, today, emails)
@@ -1086,15 +1087,15 @@ def events_command(days: int | None, send: bool, past: int = 0) -> int:
             your_rules = rules.empty()
         found = events.upcoming(archive.load()[0], today, window, (), your_rules, past)
         text = events.render(found, today, window, past)
-    except archive.ArchiveError as e:
-        print(e)
+    except archive.ArchiveError as err:
+        print(err)
         return 1
     if not text:
         span = " or ".join(x for x in (f"the last {past} days" if past else "", f"the next {window} days" if window else "") if x)
         print(f"No events in {span}.")
         return 0
     if send:
-        return 0 if deliver(events.render(found, today, window, past, html=True), sys.stdout, html=True) else 1
+        return 0 if deliver(events.render(found, today, window, past, html=True) or "", sys.stdout, html=True) else 1
     print(text)
     return 0
 
@@ -1112,14 +1113,14 @@ def add_destination(type_: str, chat_id: str | None) -> int:
         return 0
     try:
         chats = telegram.find_chats()
-    except telegram.TelegramError as e:
-        if str(e).startswith("409"):  # Telegram allows one reader: `serve` (or `bot`) is listening for chat
+    except telegram.TelegramError as err:
+        if str(err).startswith("409"):  # Telegram allows one reader: `serve` (or `bot`) is listening for chat
             print("MailBrief is running and already reading your bot's messages. Stop it first (`mailbrief stop`), "
                   "add the chat, then start it again. Or skip the lookup: --chat-id <id>.")
-        elif str(e).startswith("401"):
+        elif str(err).startswith("401"):
             print("Telegram doesn't accept TELEGRAM_BOT_TOKEN: copy it again from @BotFather into .env.")
         else:
-            print(f"Couldn't ask Telegram for your chats: {e}")
+            print(f"Couldn't ask Telegram for your chats: {err}")
         return 1
     if not chats:
         print(
@@ -1136,8 +1137,8 @@ def add_destination(type_: str, chat_id: str | None) -> int:
     destinations.add("telegram", chat["id"], chat["label"])
     try:
         telegram.send(chat["id"], "✅ MailBrief will send your morning digest here.")
-    except telegram.TelegramError as e:  # the chat is saved either way: the next digest tries again
-        print(f"Added {chat['label']}, but the test message didn't go through ({e}).")
+    except telegram.TelegramError as err:  # the chat is saved either way: the next digest tries again
+        print(f"Added {chat['label']}, but the test message didn't go through ({err}).")
         return 0
     print(f"Added {chat['label']} and sent a test message.")
     return 0
@@ -1146,13 +1147,13 @@ def add_destination(type_: str, chat_id: str | None) -> int:
 def main() -> None:
     try:
         _main()
-    except ConfigError as e:  # a missing key: one line and exit 1, not a traceback
-        sys.exit(str(e))
+    except ConfigError as err:  # a missing key: one line and exit 1, not a traceback
+        sys.exit(str(err))
     except KeyboardInterrupt:  # Ctrl+C anywhere (a prompt, a backfill): a word, not a traceback
         print("\nStopped.", file=sys.stderr)
         sys.exit(130)
-    except Exception as e:  # noqa: BLE001
-        if (msg := _explain(e)) is None:
+    except Exception as err:  # noqa: BLE001
+        if (msg := _explain(err)) is None:
             raise  # a real bug: keep the traceback
         sys.exit(msg)
 
@@ -1248,7 +1249,9 @@ def _main() -> None:
     # Emoji subjects and progress marks (✓) crash Windows' cp1252 encoding when output is piped.
     for stream in (sys.stdout, sys.stderr):
         if stream:  # None under pythonw (autostart runs `serve` without a window)
-            stream.reconfigure(encoding="utf-8", errors="replace")
+            reconfigure = getattr(stream, "reconfigure", None)
+            if reconfigure:
+                reconfigure(encoding="utf-8", errors="replace")
     from importlib.metadata import PackageNotFoundError, version
 
     try:
@@ -1268,7 +1271,7 @@ def _main() -> None:
     )
     parser.add_argument("--version", action="version", version=f"mailbrief {ver}")
     sub = parser.add_subparsers(dest="command", required=True, metavar="<command>")
-    sub.add_parser = functools.partial(_described, sub.add_parser, "")
+    setattr(sub, "add_parser", functools.partial(_described, sub.add_parser, ""))
     login_p = sub.add_parser("login", help="sign in to Outlook once in a visible browser")
     login_p.add_argument("--remote", action="store_true",
                          help="no screen (a server): print a one-time link to sign in from any browser")
@@ -1372,7 +1375,7 @@ def _main() -> None:
         help="MailBrief's MB: labels (categories) in Outlook: status, apply, clear, retag",
     )
     lab_sub = lab_p.add_subparsers(dest="action", required=True)
-    lab_sub.add_parser = functools.partial(_described, lab_sub.add_parser, "labels ")
+    setattr(lab_sub, "add_parser", functools.partial(_described, lab_sub.add_parser, "labels "))
     lab_sub.add_parser("status", help="labelled / pending / cleared emails per period")
     for name, text in (
         ("apply", "label now (pending emails; also re-labels cleared ones)"),
@@ -1425,7 +1428,7 @@ def _main() -> None:
         help="your own labels: courses, senders, topics, profile (data/rules.json)",
     )
     rules_sub = rules_p.add_subparsers(dest="action", required=True)
-    rules_sub.add_parser = functools.partial(_described, rules_sub.add_parser, "rules ")
+    setattr(rules_sub, "add_parser", functools.partial(_described, rules_sub.add_parser, "rules "))
     rules_sub.add_parser(
         "list", help="your rules and how many saved emails each matches"
     )
@@ -1554,8 +1557,8 @@ def _main() -> None:
         if args.command == "serve":
             try:
                 sys.exit(service.serve(spec))
-            except ValueError as e:
-                print(f"Bad schedule: {e}")
+            except ValueError as err:
+                print(f"Bad schedule: {err}")
                 sys.exit(2)
         if args.command == "stop":
             sys.exit(service.stop())

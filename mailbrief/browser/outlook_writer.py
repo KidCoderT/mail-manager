@@ -57,10 +57,11 @@ def set_labels(page, auth: dict, wanted: dict[str, list[str]], label: str = "Lab
                                              "reading categories"), batch)
             changes = []
             for i in batch:
-                if current.get(i) is None:
+                item = current.get(i)
+                if item is None:
                     results[i] = "gone"
                     continue
-                change_key, cats = current[i]
+                change_key, cats = item
                 new = merge_categories(cats, wanted[i])
                 if new == cats:
                     results[i] = "ok"  # already right: no write

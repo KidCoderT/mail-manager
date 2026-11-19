@@ -54,7 +54,7 @@ def _colours(names) -> dict[str, int]:
     """Colours for these labels: built-ins as above, your own by kind (CUSTOM_COLOURS)."""
     r = rules.load()
     kind_of = {rules.label_name(k, rule): k for k in rules.KINDS for rule in r[k]}
-    return {n: ALL_LABELS.get(n, CUSTOM_COLOURS.get(kind_of.get(n), CUSTOM_COLOURS["topics"])) for n in names}
+    return {n: ALL_LABELS.get(n, CUSTOM_COLOURS.get(kind_of.get(n, "topics"), CUSTOM_COLOURS["topics"])) for n in names}
 
 
 def select(emails: list[dict], period: str | None, days: int | None, today, tz) -> list[dict]:

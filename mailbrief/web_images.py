@@ -27,7 +27,7 @@ def enabled() -> bool:
 
 
 def _resolve(host: str) -> list[str]:
-    return [info[4][0] for info in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)]
+    return [str(info[4][0]) for info in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)]
 
 
 def allowed(url: str, resolve=_resolve) -> bool:
@@ -50,10 +50,10 @@ def _public(address: str) -> bool:
     """A public internet address: not private, loopback, link-local, reserved, CGNAT or multicast, and not an
     IPv6 form that carries one of those IPv4 addresses inside it (which is_global alone lets through)."""
     ip = ipaddress.ip_address(address.split("%")[0])
-    if ip.version == 6:
+    if isinstance(ip, ipaddress.IPv6Address):
         inner = ip.ipv4_mapped or ip.sixtofour  # ::ffff:a.b.c.d, 2002:AABB:CCDD::
         if inner is None and (ip in _NAT64 or int(ip) >> 32 == 0):  # 64:ff9b::a.b.c.d (NAT64), ::a.b.c.d
-            inner = ipaddress.ip_address(int(ip) & 0xFFFFFFFF)
+            inner = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
         if inner is not None:
             return inner.is_global and not inner.is_multicast
     return ip.is_global and not ip.is_multicast
@@ -91,7 +91,7 @@ def _fetch(url: str) -> tuple[str, bytes]:
 
 def download(urls: list[str], room: int, budget: int, fetch=_fetch, check=allowed) -> list[str]:
     """Up to `room` images (data URLs) totalling at most `budget` bytes. Anything odd is skipped, never raised."""
-    out = []
+    out: list[str] = []
     for url in urls[:TRIES]:
         if len(out) >= room or budget < IMAGE_MIN:
             break

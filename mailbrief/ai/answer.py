@@ -134,7 +134,7 @@ def parse_reply(reply: str, sources: list[dict]) -> dict:
     text = "\n".join(text_lines).strip()
     used = [n for n in dict.fromkeys(int(x) for x in re.findall(r"\[(\d+)\]", text)) if 1 <= n <= len(sources)]
     text = re.sub(r"\[(\d+)\]", lambda m: m.group(0) if 1 <= int(m.group(1)) <= len(sources) else "", text)
-    files = []
+    files: list[tuple[dict, dict]] = []
     for n, name in sends:
         if 1 <= n <= len(sources) and len(files) < MAX_SEND:
             att = next((a for a in sources[n - 1].get("attachments") or [] if a["name"].lower() == name.lower()), None)
@@ -206,7 +206,8 @@ def ask(question: str, history: list[tuple[str, str]] | None = None, today: date
                 "closest": False, "send": [], "plan": p}
 
     by_conv = threads.group(emails)
-    blocks, used_chars = [], 0
+    blocks: list[str] = []
+    used_chars = 0
     for n, e in enumerate(found, 1):
         conv = by_conv.get(e.get("conversation_id") or e["id"], [e])
         block = _email_block(n, e, threads.context_lines(e, conv))

@@ -40,7 +40,7 @@ class Window:
 
     def __init__(self, ttl: float = WINDOW_S, secure: bool = True):
         self.token = secrets.token_urlsafe(32)
-        self.cookie = None
+        self.cookie: str | None = None
         self.expires = time.monotonic() + ttl
         self.secure = secure
         self.state = "open"  # open → done | failed (signed in, but it didn't stick) | expired (ran out of time)
@@ -89,7 +89,8 @@ def parse_input(body: bytes) -> dict | None:
     kind = ev.get("type")
     if kind == "click":
         x, y = ev.get("x"), ev.get("y")
-        if all(isinstance(v, int) and not isinstance(v, bool) for v in (x, y)) and 0 <= x < VIEW_W and 0 <= y < VIEW_H:
+        if (isinstance(x, int) and not isinstance(x, bool) and isinstance(y, int) and not isinstance(y, bool)
+                and 0 <= x < VIEW_W and 0 <= y < VIEW_H):
             return {"type": "click", "x": x, "y": y}
     elif kind == "text":
         text = ev.get("text")

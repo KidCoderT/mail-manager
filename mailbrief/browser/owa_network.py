@@ -79,7 +79,7 @@ def _walk(node, found: list) -> None:
         if msg:
             found.append(msg)
             return
-        children = node.values()
+        children = list(node.values())
     elif isinstance(node, list):
         children = node
     else:
@@ -96,7 +96,7 @@ def parse_messages(payloads: list) -> list[dict]:
     # Conversation view and item view describe the same mail; prefer conversations if present.
     if any(m["kind"] == "conversation" for m in found):
         found = [m for m in found if m["kind"] == "conversation"]
-    unique = {}
+    unique: dict = {}
     for m in found:
         unique.setdefault(m["id"] or (m["subject"], m["received_at"]), m)
     return sorted(unique.values(), key=lambda m: m["received_at"], reverse=True)
@@ -222,12 +222,12 @@ def html_getitem_body(header: dict, ids: list[str]) -> dict:
 
 def html_bodies(response: dict) -> dict[str, str]:
     """{email id: HTML body} from an html_getitem_body response."""
-    out = {}
+    out: dict[str, str] = {}
     for msg in (response.get("Body") or {}).get("ResponseMessages", {}).get("Items", []):
         if msg.get("ResponseClass") == "Success":
             for it in msg.get("Items", []):
-                if _id(it.get("ItemId")):
-                    out[_id(it["ItemId"])] = (it.get("Body") or {}).get("Value") or ""
+                if item_id := _id(it.get("ItemId")):
+                    out[item_id] = (it.get("Body") or {}).get("Value") or ""
     return out
 
 
@@ -391,7 +391,7 @@ def parse_update(response: dict, ids: list[str]) -> dict[str, str]:
     return out
 
 
-def master_list_body(add: list[tuple[str, int]] = (), remove: list[str] = (), now: str = "", new_id=None) -> dict:
+def master_list_body(add: tuple[tuple[str, int], ...] | list[tuple[str, int]] = (), remove: tuple[str, ...] | list[str] = (), now: str = "", new_id=None) -> dict:
     """Outlook's own UpdateMasterCategoryList request: add (name, colour) pairs and/or remove names."""
     import uuid
 
@@ -421,7 +421,7 @@ def master_categories(payloads: list) -> dict[str, int] | None:
         if isinstance(node, dict):
             mcl = node.get("MasterCategoryList")
             if isinstance(mcl, dict) and isinstance(mcl.get("MasterList"), list):
-                return {c.get("Name"): c.get("Color") for c in mcl["MasterList"] if isinstance(c, dict)}
+                return {c["Name"]: c["Color"] for c in mcl["MasterList"] if isinstance(c, dict) and isinstance(c.get("Name"), str) and isinstance(c.get("Color"), int)}
             stack.extend(node.values())
         elif isinstance(node, list):
             stack.extend(node)

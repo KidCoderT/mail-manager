@@ -99,7 +99,8 @@ def _load_view(page, responses: list, view, max_scrolls: int) -> list:
 def open_outlook(page, timeout_s: int = 60) -> dict:
     """Open Outlook and wait until signed in. Returns {"expired", "auth", "startup"}: auth is the in-memory replay
     state for _service_call, startup the parsed StartupData payloads (your address, your category list)."""
-    auth, startup_responses = {}, []
+    auth: dict = {}
+    startup_responses: list = []
     # StartupData is JSON served as application/x-javascript, so a JSON content-type filter would miss it.
     page.on("response", lambda r: startup_responses.append(r) if "startupdata" in r.url.lower() else None)
     page.on("request", lambda r: _track_auth(auth, r))
@@ -188,8 +189,8 @@ def fetch_emails(page, auth: dict, conversations: list[dict], me: str | None = N
         progress.count("Fetching full text", min(n + GETITEM_BATCH, len(ids)), len(ids))
     for r in records:
         r["in_inbox"] = r["id"] in inbox_ids
-        r["from_me"] = bool(me) and r["sender_email"].lower() == me.lower()
-        r["direct"] = bool(me) and r.get("to") == [me.lower()]  # you're the only To recipient
+        r["from_me"] = me is not None and r["sender_email"].lower() == me.lower()
+        r["direct"] = me is not None and r.get("to") == [me.lower()]  # you're the only To recipient
     return records, True
 
 
@@ -256,7 +257,7 @@ def collect_images(page, auth: dict, emails: list[dict]) -> dict[str, list[str]]
 
     links = fetch_image_urls(page, auth, emails) if web_images.enabled() else {}
     wanted = [e for e in emails if e.get("image_attachments") or links.get(e["id"])]
-    images = {e["id"]: [] for e in emails}
+    images: dict[str, list[str]] = {e["id"]: [] for e in emails}
     for n, e in enumerate(wanted, 1):
         got = fetch_images(page, auth, e)
         used = sum(a.get("size") or 0 for a in (e.get("image_attachments") or [])[: len(got)])

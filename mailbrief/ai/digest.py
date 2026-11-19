@@ -71,7 +71,7 @@ def _items(emails: list[dict], results: list[dict], your_rules: dict) -> list[di
             out["boosted"] = True
         return out
 
-    threads = {}  # short, stable labels instead of Exchange's long conversation ids
+    threads: dict[str, str] = {}  # short, stable labels instead of Exchange's long conversation ids
     return [
         {"ref": n, "from": e["sender_name"] or e["sender_email"], "subject": e["subject"],
          "received": f"{e['received_at']:%a %d %b %H:%M}",
@@ -116,7 +116,7 @@ def digest(emails: list[dict], results: list[dict], scope: str = "new", on_part=
         # (ref order is time order: callers pass the emails oldest first.)
         items.sort(key=lambda i: (int(i["thread"][1:]), i["ref"]))
         batches = [items[n : n + BATCH] for n in range(0, len(items), BATCH)]
-        parts, done = [None] * len(batches), 0
+        parts, done = [""] * len(batches), 0
         with ThreadPoolExecutor(PARALLEL) as ex:
             # Parts are plain summarising: no thinking (much faster). The merge below does the reasoning.
             futures = {ex.submit(_ask, f"{_prompt(scope, 'classified emails (JSON)', profile)}\n\n"

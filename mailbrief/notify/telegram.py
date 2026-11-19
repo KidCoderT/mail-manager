@@ -121,7 +121,8 @@ def _chunk_block(lines: list[str], measure=size) -> list[str]:
     # Balanced, not greedy: 4100 units → two ~2050 messages, never 3990 + a lonely 110.
     pieces_needed = -(-measure("\n".join(lines)) // LIMIT)
     target = min(LIMIT, -(-measure("\n".join(lines)) // pieces_needed) + 200)
-    chunks, current = [], []
+    chunks: list[list[str]] = []
+    current: list[str] = []
     for line in lines:
         for piece in (_hard_cut(line, LIMIT - 100, measure) if measure(line) > LIMIT - 100 else [line]):
             if current and measure("\n".join(current + [piece])) > target:

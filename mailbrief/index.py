@@ -39,7 +39,8 @@ def indexable(email: dict) -> bool:
 
 def _split(text: str) -> list[str]:
     """~CHUNK-character pieces, cut at a paragraph or sentence break when there's one nearby, with OVERLAP."""
-    out, start = [], 0
+    out: list[str] = []
+    start = 0
     while start < len(text) and len(out) < MAX_BODY_CHUNKS:
         end = min(len(text), start + CHUNK)
         if end < len(text):
@@ -124,12 +125,12 @@ def update(emails: list[dict], log=None, embed=None, path: Path | None = None, r
     try:
         if embed is None:
             from mailbrief.ai.client import embed
-        fresh = {"model": _model(), "updated": None, "items": {}}
+        fresh: dict = {"model": _model(), "updated": None, "items": {}}
         try:  # derived data: an index that won't open (key changed, file damaged) is rebuilt, not fatal
             data = fresh if rebuild else load(path)
-        except Exception as e:  # noqa: BLE001
+        except Exception as err:  # noqa: BLE001
             if log:
-                print(f"warning: the search index couldn't be read ({type(e).__name__}); rebuilding it", file=log)
+                print(f"warning: the search index couldn't be read ({type(err).__name__}); rebuilding it", file=log)
             data = fresh
         if data.get("model") != _model():
             data = fresh
@@ -155,9 +156,9 @@ def update(emails: list[dict], log=None, embed=None, path: Path | None = None, r
             data["updated"] = datetime.now(timezone.utc).isoformat()
             save(data, path)
         return len(todo), len(removed)
-    except Exception as e:  # noqa: BLE001
+    except Exception as err:  # noqa: BLE001
         if log:
-            print(f"warning: search index not updated ({type(e).__name__}: {e}); the next run retries", file=log)
+            print(f"warning: search index not updated ({type(err).__name__}: {err}); the next run retries", file=log)
         return 0, 0
 
 

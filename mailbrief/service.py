@@ -21,6 +21,7 @@ import time
 from contextlib import contextmanager
 from datetime import datetime, time as clock, timedelta
 from pathlib import Path
+from typing import Any
 
 from mailbrief.storage.files import replace
 
@@ -120,7 +121,7 @@ def lock(name: str):
     f = open(DATA / f"{name}.lock", "a+")
     try:
         try:
-            if os.name == "nt":
+            if sys.platform == "win32":
                 import msvcrt
                 f.seek(0)
                 msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
@@ -189,7 +190,8 @@ def _python() -> str:
 def _run_child(scope: str, at: datetime | None = None) -> int:
     """One scheduled run as a child process; its output goes to the log (and the screen). Returns its exit code."""
     cmd = [_python(), "-m", "mailbrief.main", *run_args(scope, at)]
-    if os.name == "nt":  # own process group: your Ctrl+C reaches serve only, which lets the run finish
+    extra: dict[str, Any]
+    if sys.platform == "win32":  # own process group: your Ctrl+C reaches serve only, which lets the run finish
         extra = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
     else:
         extra = {"start_new_session": True}

@@ -101,7 +101,8 @@ def validate(data: dict | None, topics: tuple[str, ...] = (), received: date | N
     priority = data.get("priority")
     deadline = data.get("deadline")
     names = {t.lower(): t for t in topics}
-    tags = data.get("tags") if isinstance(data.get("tags"), list) else []
+    tags = data.get("tags")
+    tags = tags if isinstance(tags, list) else []
     return {
         "category": data["category"],
         "priority": priority if isinstance(priority, int) and 1 <= priority <= 5 else 3,
@@ -127,6 +128,7 @@ def classify(email: dict, images: list[str], context: list[str] | None = None, r
         f"Subject: {email['subject']}\nReceived: {email['received_at']:%Y-%m-%d %H:%M %Z}\n"
         f"Attachments: {', '.join(email['attachment_names']) or 'none'}\n\n{trim_body(email['body_text'])}\n</email>"
     )
+    content: str | list[dict]
     if images:
         model = os.environ.get("AI_VISION_MODEL", "qwen3.6:35b")  # 5/5 on images; qwen3.8:27b crawls when the endpoint is busy
         content = [{"type": "text", "text": text}] + [{"type": "image_url", "image_url": {"url": u}} for u in images]
