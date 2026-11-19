@@ -23,5 +23,6 @@ jobs:
           enable-cache: true
       # The tests need no browser, no network, no Outlook account and no AI endpoint.
       - run: uv sync --frozen
-      - run: uv run ruff check mailbrief tests
+      - run: uv run ruff check mailbrief tests demo scripts
+      - run: uv run mypy mailbrief
       - run: uv run pytest -q

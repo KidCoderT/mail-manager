@@ -43,7 +43,11 @@ build-backend = "uv_build"
 module-root = ""
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.6"]
+dev = [
+    "mypy>=1.13",
+    "pytest>=8",
+    "ruff>=0.6",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

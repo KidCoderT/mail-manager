@@ -118,6 +118,7 @@ uv run mailbrief serve                        # from now on: a digest at RUN_AT 
 uv sync
 uv run pytest -q                       # no browser, network, Outlook account or AI endpoint needed
 uv run ruff check mailbrief tests
+uv run mypy mailbrief
 ```
 
 Security reports: see [SECURITY.md](SECURITY.md).
