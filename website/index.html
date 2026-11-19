@@ -12,7 +12,7 @@
 <meta property="og:url" content="https://kidcodert.github.io/mail-manager/">
 <meta name="twitter:card" content="summary">
 <meta name="color-scheme" content="light dark">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2317212b'/%3E%3Crect x='5' y='10' width='22' height='15' rx='2' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3Cpath d='M6 12l10 7 10-7' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3Crect x='20' y='4' width='9' height='9' rx='2' fill='%23e2730c'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2317212b'/%3E%3Crect x='5' y='10' width='22' height='15' rx='2' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3Cpath d='M6 12l10 7 10-7' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3Crect x='20' y='4' width='9' height='9' rx='2' fill='%2357d984'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
 </head>
@@ -22,26 +22,26 @@
 <header class="top">
   <div class="wrap">
     <a class="brand" href="index.html" aria-label="MailBrief home">
-      <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="9" width="24" height="17" rx="3" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M4.5 11.5 15 19.5l10.5-8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><rect x="20" y="3" width="10" height="10" rx="2" fill="#e2730c"/></svg>
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="9" width="24" height="17" rx="3" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M4.5 11.5 15 19.5l10.5-8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><rect x="20" y="3" width="10" height="10" rx="2" fill="#57d984"/></svg>
       MailBrief
     </a>
     <nav aria-label="Sections">
       <ul>
-        <li><a href="#what">What it is</a></li>
-        <li><a href="#how">How it works</a></li>
+        <li><a href="#what">Overview</a></li>
+        <li><a href="#how">Pipeline</a></li>
         <li><a href="#examples">Examples</a></li>
         <li><a href="#using">Using it</a></li>
         <li><a href="#privacy">Privacy</a></li>
         <li><a href="#limits">Limits</a></li>
         <li><a href="#faq">FAQ</a></li>
-        <li><a class="cta" href="setup.html">Set it up</a></li>
+        <li><a class="cta" href="setup.html">Setup</a></li>
         <li><a href="https://github.com/KidCoderT/mail-manager">GitHub</a></li>
       </ul>
     </nav>
     <button class="theme" type="button" aria-label="Toggle light and dark theme" title="Toggle theme">
       <svg class="sun" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.2M12 19.8V22M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2 12h2.2M19.8 12H22M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></svg>
       <svg class="moon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg>
-    </button>
+    <span class="theme-label">Theme</span></button>
   </div>
 </header>
 
@@ -50,48 +50,48 @@
 <!-- ════════════════════════════ hero ════════════════════════════ -->
 <section class="hero">
   <div class="wrap">
-    <div>
-      <p class="prompt-line" aria-hidden="true">~/mail-manager <b>$</b> uv run mailbrief run --send</p>
-      <h1>Your inbox, sorted and summarised before you open it<span class="cur" aria-hidden="true">_</span></h1>
-      <p class="lede">Every morning MailBrief reads your Outlook inbox on your own machine, has an AI you choose classify each new email, labels it in Outlook, and sends you a digest on Telegram. Then you can ask it questions about your mail.</p>
-      <div class="actions">
-        <a class="btn primary" href="setup.html">Set it up</a>
-        <a class="btn" href="https://github.com/KidCoderT/mail-manager">View on GitHub ↗</a>
+    <div class="hero-intro">
+      <div>
+        <p class="prompt-line"><span>~/mailbrief</span> <b>$</b> cat README</p>
+        <h1>A quieter inbox.<br>A single command<span class="cur" aria-hidden="true">_</span></h1>
       </div>
-      <ul class="badges"><li>self-hosted</li><li>single user</li><li>MIT</li><li>Microsoft 365</li><li>labels only, never deletes</li></ul>
-      <p class="facts">Unofficial: not affiliated with Microsoft or Telegram. It never deletes, moves, sends or marks anything as read. <a href="#limits">Read the limits first.</a></p>
+      <div class="hero-about">
+        <p class="lede">From your terminal to your Telegram. MailBrief reads, sorts and summarises your Outlook mail, on a schedule you control.</p>
+        <div class="actions">
+          <a class="btn primary" href="setup.html">Get started</a>
+          <a class="btn" href="#examples">Explore output</a>
+        </div>
+        <p class="hero-meta">Python &middot; Microsoft 365 &middot; Self-hosted &middot; MIT</p>
+      </div>
     </div>
 
-    <div class="scene" role="img" aria-label="Illustration: an inbox with MailBrief labels, and the digest message it sends. All emails are invented.">
-      <div class="inbox">
-        <div class="inbox-bar"><b>Focused</b><span>Other</span><span>Tue 10 Nov</span></div>
-        <ol>
-          <li><span class="from">Housing Office</span><span class="when">06:58</span><span class="subj">Reminder: spring deposit due Friday</span>
-            <span class="chips" style="--i:0"><span class="chip c-red">MB: Urgent</span><span class="chip c-darkred">MB: P1</span></span></li>
-          <li><span class="from">Dr Imogen Vastari</span><span class="when">Mon 21:14</span><span class="subj">Re: your seminar slot</span>
-            <span class="chips" style="--i:1"><span class="chip c-orange">MB: Needs Reply</span><span class="chip c-darkred">MB: P1</span><span class="chip c-cranberry">MB: Dr Vastari</span><span class="chip c-darkblue">MB: BIO204</span></span></li>
-          <li><span class="from">Careers Office</span><span class="when">Mon 17:30</span><span class="subj">Orbital Labs engineering talk, this Thursday</span>
-            <span class="chips" style="--i:2"><span class="chip c-green">MB: Newsletter</span><span class="chip c-orange">MB: P2</span><span class="chip c-cranberry">MB: Careers</span></span></li>
-          <li class="read"><span class="from">STAT310 Teaching Team</span><span class="when">Mon 16:02</span><span class="subj">Midterm seating plan posted</span>
-            <span class="chips" style="--i:3"><span class="chip c-blue">MB: FYI</span><span class="chip c-orange">MB: P2</span><span class="chip c-darkblue">MB: STAT310</span></span></li>
-          <li class="read"><span class="from">Campus Weekly</span><span class="when">Mon 12:00</span><span class="subj">This week at Harrowmere</span>
-            <span class="chips" style="--i:4"><span class="chip c-green">MB: Newsletter</span><span class="chip c-grey">MB: P5</span></span></li>
-        </ol>
-      </div>
-      <div class="tg">
-        <div class="tg-head">
-          <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="16" fill="#17212b"/><rect x="8" y="11" width="16" height="11" rx="2" fill="none" stroke="#fff" stroke-width="1.8"/><path d="M9 12.5l7 5 7-5" fill="none" stroke="#fff" stroke-width="1.8"/></svg>
-          <div><b>MailBrief</b><small>your own bot</small></div>
+    <div class="shell scene" aria-label="Illustrated MailBrief terminal session with invented mail">
+      <div class="shell-bar"><span><b aria-hidden="true">&gt;_</b> mailbrief / morning-run</span><span class="shell-hint">illustrative session</span></div>
+      <div class="shell-grid">
+        <div class="shell-session">
+          <p class="shell-command"><span>you@localhost</span> <span class="shell-path">~/mailbrief</span><br><b>$</b> uv run mailbrief run --send --commit</p>
+          <p class="shell-comment"># A morning run, from inbox to brief.</p>
+          <ol class="run-log" aria-label="Example run stages">
+            <li><span class="log-state">[ok]</span><div>Read Outlook inbox<small>9 new emails &middot; full text retrieved</small></div></li>
+            <li><span class="log-state">[ok]</span><div>Classify with your AI<small>Urgent 1 &middot; Needs Reply 2 &middot; FYI 4 &middot; Newsletter 2</small></div></li>
+            <li><span class="log-state">[ok]</span><div>Save &amp; label<small>Encrypted archive &middot; MB: categories applied</small></div></li>
+            <li><span class="log-state">[ok]</span><div>Deliver to Telegram<small>Morning digest + upcoming events</small></div></li>
+          </ol>
+          <div class="shell-result"><span>&#10003;</span> Done. Your morning, back to you.</div>
+          <p class="shell-prompt" aria-hidden="true"><b>$</b> <span class="cursor-block"></span></p>
         </div>
-        <div class="tg-body">
-<div class="msg">📬 9 new emails — FYI 3 · Newsletter 2 · Needs Reply 2 · Urgent 1 · Meetings 1
-
-TOP PRIORITIES TODAY
-• Housing Office: the spring deposit is due Fri 13 Nov <span class="lnk">↗</span>
-• Dr Vastari needs your seminar week by Thursday <span class="lnk">↗</span><time>07:31</time></div>
+        <div class="shell-output">
+          <div class="output-label"><span>OUTPUT / TELEGRAM</span><a href="#examples">View examples &#8599;</a></div>
+          <div class="brief-heading"><span>09</span><div>new emails<small>One morning brief.</small></div></div>
+          <div class="brief-item"><span class="brief-tag">01 / PRIORITY</span><p>Housing deposit due Friday.</p><small>Housing Office &middot; Action needed</small></div>
+          <div class="brief-item"><span class="brief-tag">02 / REPLY</span><p>Confirm your seminar slot.</p><small>Dr Vastari &middot; Reply by Thursday</small></div>
+          <div class="brief-item"><span class="brief-tag">03 / UPCOMING</span><p>Engineering talk, Thursday at 14:00.</p><small>Careers Office &middot; Innovation Hall</small></div>
+          <p class="output-note">Invented mail. Real workflow. <a href="#privacy">See where your data goes.</a></p>
         </div>
       </div>
+      <div class="shell-status"><span><i aria-hidden="true"></i> YOUR MACHINE</span><span>Outlook &rarr; AI &rarr; Telegram</span><span>read &middot; classify &middot; deliver</span></div>
     </div>
+    <p class="hero-footnote">Your mailbox stays yours. MailBrief only changes its own labels. <a href="#limits">Read the limits</a></p>
   </div>
 </section>
 
