@@ -1,5 +1,6 @@
 """The only place that talks to the LLM: any OpenAI-compatible /chat/completions endpoint."""
 
+import http.client
 import json
 import os
 import re
@@ -11,6 +12,9 @@ from mailbrief import ConfigError
 
 DEFAULT_BASE_URL = "https://soclaas-api.comp.nus.edu.sg/v1"
 RETRIES = 5  # busy (429) or server errors: backoff 3, 6, 12, 24, 48 s
+MAX_WAIT_S = 120  # the longest a Retry-After is obeyed: a run holds the run lock while it waits
+# No answer: a timeout, a refused or reset connection, or a reply cut off half way.
+NO_ANSWER = (TimeoutError, urllib.error.URLError, ConnectionError, http.client.HTTPException)
 TIMEOUT_RETRIES = 2  # no answer at all: a hung endpoint usually stays hung, so give up within minutes
 
 
@@ -35,14 +39,17 @@ def complete(model: str, messages: list[dict], thinking: bool = False, max_token
         # fast model is better than a run that never finishes.
         try:
             data = _post("/chat/completions", body, timeout=timeout, timeout_retries=0)
-        except (TimeoutError, urllib.error.URLError) as e:
+        except NO_ANSWER as e:
             if isinstance(e, urllib.error.HTTPError):
                 raise
             print(f"AI: {model} didn't answer in {timeout}s; using {fallback} instead", flush=True)
             data = _post("/chat/completions", {**body, "model": fallback}, timeout=timeout)
     else:
         data = _post("/chat/completions", body, timeout=timeout)
-    text = data["choices"][0]["message"].get("content") or ""
+    try:
+        text = data["choices"][0]["message"].get("content") or ""
+    except (KeyError, IndexError, TypeError, AttributeError):  # a 200 that isn't a completion ({"error": …})
+        text = ""  # an empty reply: callers already retry or fall back on those
     return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
 
 
@@ -78,10 +85,10 @@ def _post(path: str, body: dict, timeout: float = 120, timeout_retries: int = TI
             if (e.code != 429 and e.code < 500) or busy == RETRIES:
                 raise
             retry_after = e.headers.get("Retry-After", "")
-            wait = int(retry_after) if retry_after.isdigit() else min(60, 3 * 2**busy)
+            wait = min(MAX_WAIT_S, int(retry_after)) if retry_after.isdigit() else min(60, 3 * 2**busy)
             busy += 1
             print(f"AI: busy ({e.code}), retrying in {wait}s ({busy}/{RETRIES})", flush=True)
-        except (TimeoutError, urllib.error.URLError) as e:  # HTTPError is caught above
+        except NO_ANSWER as e:  # HTTPError is caught above
             if hung >= timeout_retries:
                 raise
             hung += 1

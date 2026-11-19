@@ -54,6 +54,26 @@ def test_busy_endpoint_is_still_waited_out():
     assert len(fake.timeouts) == 5
 
 
+def test_dropped_connections_are_retried_and_waits_are_capped():
+    import http.client
+
+    ok = {"choices": [{"message": {"content": "hi"}}]}
+    fake = Fake([ConnectionResetError("reset"), http.client.RemoteDisconnected("closed"), ok])
+    assert patched(fake, lambda: client.complete("m", [])) == "hi" and len(fake.timeouts) == 3
+
+    waits, real = [], client.time.sleep
+    busy = urllib.error.HTTPError("u", 429, "busy", {"Retry-After": "3600"}, io.BytesIO(b""))
+
+    def run():
+        client.time.sleep = waits.append  # patched() restores the real sleep afterwards
+        return client.complete("m", [])
+
+    assert patched(Fake([busy, ok]), run) == "hi" and waits == [client.MAX_WAIT_S]
+    assert client.time.sleep is real
+    # A 200 that isn't a completion is an empty reply, not a KeyError.
+    assert patched(Fake([{"error": "overloaded"}]), lambda: client.complete("m", [])) == ""
+
+
 def test_other_errors_are_not_retried():
     fake = Fake([urllib.error.HTTPError("u", 401, "no", {}, None)])
     try:
