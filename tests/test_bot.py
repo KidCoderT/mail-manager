@@ -117,6 +117,10 @@ def test_commands_and_errors():
     b.poll_once()
     assert api.sent()[-1]["text"].startswith("No events in the next")
 
+    api.updates = [{"update_id": 42, "message": {"chat": {"id": 111, "type": "private"}, "photo": [{"file_id": "x"}]}}]
+    b.poll_once()
+    assert api.sent()[-1]["text"].startswith("I can only read text")  # not silence
+
     synced = []
     b.run_sync = lambda: synced.append(1) or 0
     api.updates = [msg(5, 111, "/sync")]

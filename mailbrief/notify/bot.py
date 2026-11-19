@@ -100,9 +100,10 @@ class Bot:
         if not self.allowed(chat):
             return  # strangers and groups learn nothing, not even that the bot is alive
         text = (msg.get("text") or "").strip()
-        if not text:
-            return
         chat_id = str(chat["id"])
+        if not text:  # a photo, voice note, sticker, file…
+            self.say(chat_id, "I can only read text for now: type your question, or /help for what I can do.")
+            return
         try:
             if text.startswith("/"):
                 self._command(chat_id, text)
