@@ -137,7 +137,8 @@ $('shot').onclick = e => {{ const r = $('shot').getBoundingClientRect();  // sho
 $('f').onsubmit = e => {{ e.preventDefault(); if ($('box').value) post('/input', {{type: 'text', text: $('box').value}}); $('box').value = ''; }};
 $('show').onchange = () => $('box').type = $('show').checked ? 'text' : 'password';
 document.querySelectorAll('[data-key]').forEach(b => b.onclick = () => post('/input', {{type: 'key', key: b.dataset.key}}));
-$('go').onclick = async () => {{ const r = await post('/login', {{token: tok}});
+$('go').onclick = async () => {{ $('go').disabled = true; msg('Starting…');  // one tap only: a second would get "already used"
+  const r = await post('/login', {{token: tok}}).catch(() => ({{ok: false}}));
   r.ok ? screen() : msg('This link has already been used or has expired.' + AGAIN); }};
 if (tok) {{ $('start').hidden = false; msg('Tap Start to open the sign-in browser. This link works once.'); }}
 else fetch('/status').then(r => r.ok ? screen() : msg(ENDS.closed));
