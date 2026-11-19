@@ -1212,6 +1212,17 @@ EXAMPLES = {
 }
 
 
+def _positive(text: str) -> int:
+    """argparse type for counts: 1 or more. (A negative --limit used to slice one email off the end silently.)"""
+    try:
+        n = int(text)
+    except ValueError:
+        n = 0
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"{text!r} isn't a whole number of 1 or more")
+    return n
+
+
 def _described(add_parser, prefix: str, name: str, **kw):
     """add_parser, plus what argparse leaves out of `mailbrief <command> --help`: the command's description
     (its one-line help) and its examples."""
@@ -1314,15 +1325,16 @@ def _main() -> None:
     em_p.add_argument(
         "--search", help="text to find in sender, subject or body (all periods)"
     )
-    em_p.add_argument(
+    one = em_p.add_mutually_exclusive_group()  # together, --show's number silently won
+    one.add_argument(
         "--show",
-        type=int,
+        type=_positive,
         metavar="N",
         help="open email #N from the list, with its thread outline",
     )
-    em_p.add_argument(
+    one.add_argument(
         "--thread",
-        type=int,
+        type=_positive,
         metavar="N",
         help="print the whole conversation of email #N",
     )
@@ -1366,10 +1378,10 @@ def _main() -> None:
             "--period", choices=["this-week", "this-month", "last-month", "older"], help=PERIOD_HELP
         )
         a.add_argument(
-            "--days", type=int, metavar="N", help="emails from the last N days"
+            "--days", type=_positive, metavar="N", help="emails from the last N days"
         )
         a.add_argument(
-            "--limit", type=int, metavar="N", help="at most N emails (newest first)"
+            "--limit", type=_positive, metavar="N", help="at most N emails (newest first)"
         )
         a.add_argument(
             "--dry-run",
