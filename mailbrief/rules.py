@@ -4,6 +4,7 @@ Courses and senders are matched here in code (no AI); topics are tagged by the c
 labels.labels_for() asks effective() what an email should carry, so a rule change relabels the archive by itself.
 """
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -98,13 +99,14 @@ def load(path: Path | None = None) -> dict:
     path = path or RULES_PATH
     if not path.exists():
         return empty()
-    stamp = (str(path), path.stat().st_mtime_ns)
-    if _cache[0] != stamp:
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as e:
-            raise RulesError(f"can't read {path}: {e}") from None
-        _cache = (stamp, validate(data))
+    try:
+        raw = path.read_bytes()
+        stamp = (str(path), hashlib.sha256(raw).digest())
+        if _cache[0] != stamp:
+            data = json.loads(raw.decode("utf-8"))
+            _cache = (stamp, validate(data))
+    except (OSError, ValueError) as e:
+        raise RulesError(f"can't read {path}: {e}") from None
     return _cache[1]
 
 
