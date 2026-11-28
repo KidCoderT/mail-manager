@@ -100,9 +100,10 @@ def load(path: Path | None = None) -> dict:
     path = path or INDEX_PATH
     if not path.exists():
         return {"model": _model(), "updated": None, "items": {}}
-    stamp = (str(path), path.stat().st_mtime_ns)
+    raw = path.read_bytes()
+    stamp = (str(path), hashlib.sha256(raw).digest())
     if _cache[0] != stamp:
-        data = decrypt(path.read_bytes())
+        data = decrypt(raw)
         data["items"] = {i: {"hash": it["hash"], "vecs": [_unpack(v) for v in it["vecs"]]} for i, it in data["items"].items()}
         _cache = (stamp, data)
     return _cache[1]

@@ -1,5 +1,8 @@
+import os
 import tempfile
 from pathlib import Path
+
+import pytest
 
 from mailbrief.rules import RulesError, add, effective, empty, load, matches, remove, save, validate
 
@@ -91,6 +94,21 @@ def test_add_remove_save_load():
             raise AssertionError("broken file loaded")
         except RulesError:
             pass
+
+
+def test_load_detects_same_size_change_with_same_mtime(tmp_path):
+    path = tmp_path / "rules.json"
+    path.write_text('{"profile":"Alice"}', encoding="utf-8")
+    assert load(path)["profile"] == "Alice"
+    original = path.stat()
+    path.write_text('{"profile":"Bobby"}', encoding="utf-8")
+    os.utime(path, ns=(original.st_atime_ns, original.st_mtime_ns))
+    assert path.stat().st_size == original.st_size
+    assert load(path)["profile"] == "Bobby"
+    path.write_text("!" * original.st_size, encoding="utf-8")
+    os.utime(path, ns=(original.st_atime_ns, original.st_mtime_ns))
+    with pytest.raises(RulesError):
+        load(path)
 
 
 if __name__ == "__main__":

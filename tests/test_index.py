@@ -92,6 +92,19 @@ def test_damaged_index_is_rebuilt_and_search_still_answers():
         assert index.update(emails, embed=fake_embed, path=path) == (2, 0)  # a plain update recovers too
 
 
+def test_update_detects_same_size_corruption_with_same_mtime(tmp_path):
+    path = tmp_path / "index.enc"
+    emails = [mail(1, "Midterm", "midterm venue")]
+    assert index.update(emails, embed=fake_embed, path=path) == (1, 0)
+    assert index.status(path)["emails"] == 1  # populate the cache
+    original = path.stat()
+    path.write_bytes(b"!" * original.st_size)
+    os.utime(path, ns=(original.st_atime_ns, original.st_mtime_ns))
+    assert path.stat().st_size == original.st_size
+    assert index.update(emails, embed=fake_embed, path=path) == (1, 0)
+    assert index.status(path)["emails"] == 1
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
