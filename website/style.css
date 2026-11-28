@@ -113,10 +113,6 @@ kbd {
   align-self: center; display: flex; align-items: center; gap: .6rem;
   font-weight: 700; color: var(--text); text-decoration: none; letter-spacing: -.01em;
 }
-.brand::before {
-  content: ""; width: 9px; height: 9px; margin: 0 4px 4px 0; border-radius: 2px;
-  background: var(--cyan); box-shadow: 4px 4px 0 var(--pink);
-}
 .tabs { display: flex; align-items: flex-end; gap: 2px; flex: 1; min-width: 0; margin-left: .6rem; overflow-x: auto; scrollbar-width: none; }
 .tabs a {
   position: relative; top: 1px;
@@ -437,7 +433,6 @@ html:not(.js) .home .session { grid-template-columns: minmax(0, 1fr); }
 .titlebar { background: var(--bg); height: 56px; padding-inline: 22px; align-items: center; }
 :root { --bar: 56px; }
 .brand { font-weight: 500; letter-spacing: -.04em; }
-.brand::before { width: 14px; height: 10px; margin: 0 4px 0 0; border: 1px solid var(--pink); border-radius: 1px; background: none; box-shadow: none; }
 .tabs { align-self: stretch; align-items: stretch; gap: 20px; margin-left: 32px; }
 .tabs a { display: grid; align-items: center; top: 0; padding: 0 3px; border: 0; border-radius: 0; }
 .tabs a[aria-current] { border: 0; box-shadow: inset 0 -2px var(--pink); background: none; }
@@ -509,3 +504,5 @@ pre, .docs-search input, .copy-button { border-radius: 3px; }
   .home .cmdline { padding-inline: 14px; }
   .home .statusbar { padding-inline: 14px; }
 }
+
+.brand svg { width: 22px; height: 22px; flex: none; color: var(--pink); }
