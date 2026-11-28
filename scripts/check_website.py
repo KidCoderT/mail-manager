@@ -15,7 +15,7 @@ from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1] / "website"
 PAGES = ("index.html", "setup.html", "docs.html")
-PALETTE = ("#101116", "#191b24", "#efedf4", "#a5a8ba", "#ff78ab", "#7ddde8", "#b8a4ff")
+PALETTE = ("#111210", "#181a17", "#ebe6db", "#b5b3a8", "#e7c58a", "#a9c6ce", "#d3c5a4")
 TELEGRAM = (
     "/start", "/help", "/new", "/sync", "/digest", "/events", "/login", "/profile",
     "/rules", "/labels", "/rule", "/label",

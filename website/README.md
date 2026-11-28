@@ -2,6 +2,8 @@
 
 This is the canonical MailBrief website, published by GitHub Pages. Open `index.html` directly. Three static pages, one stylesheet and one script; no build, external assets, analytics or backend.
 
+This experimental branch borrows the Git learning project?s quiet split workspace: warm near-black/paper themes, muted amber, flat panes and a mail-route sidebar. All demo behavior and documentation remain unchanged.
+
 Every page is one terminal window: a tab bar, the content, a prompt you can type into and a status bar.
 
 - `index.html`: an introduction beside a Telegram-style digest preview, with demo-only controls and a separate terminal output area. On mobile the preview stacks below the introduction.
