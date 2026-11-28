@@ -152,7 +152,7 @@ It **never** deletes, moves, sends or marks anything as read. The only thing it 
 7. **Selects the new inbox emails:** received ≥ cursor, ID not already processed, not sent by you. **Emails the AI failed on** (saved as Unclassified) in the last 7 days are selected again, even though the cursor has moved past them, and are classified and put in this digest. The log says *"Retrying N email(s) the AI failed on earlier"*.
 8. **Collects images**, but only for emails that still need the AI, in memory only, at most 4 images (a common endpoint limit) and 8 MB per email:
    - attached images of 15 KB–5 MB and inline ones (posters in the body) of 30 KB–5 MB, through `GetAttachment`;
-   - with `REMOTE_IMAGES=on` (the default), **linked images**: a read-only GetItem reads the emails' HTML, keeps https image URLs that don't look like icons, logos or trackers, and downloads them with safety checks (no local-network addresses, no redirects, size and type limits). The senders' image servers see your IP. Details: README §3.10.
+   - with `REMOTE_IMAGES=on` (the default), **linked images**: a read-only GetItem reads the emails' HTML, keeps https image URLs that don't look like icons, logos or trackers, and downloads them with safety checks (no local-network addresses, no redirects, size and type limits). The senders' image servers see your IP. Details: [design notes §3.10](docs/design.md).
 9. **Saves the refreshed session.** Microsoft rotates cookies, so saving keeps the login alive longer.
 10. **Builds threads:** groups messages by conversation, orders them parent-before-reply, marks emails you already answered as `replied`.
 11. **Classifies** new emails with the AI, 4 conversations in parallel and each conversation's emails oldest first, so a reply sees its parent's summary:
@@ -750,7 +750,7 @@ The image needs about 2 GB of disk. Microsoft logins from a datacenter IP may ex
 
 **Home server with Docker:** uncomment the `ports:` line in `compose.yaml` and set `PUBLIC_URL` to an `https://` address that reaches it. That means a reverse proxy or tunnel with TLS; the sign-in page itself speaks plain HTTP behind it.
 
-> ⚠️ **Before either recipe below: a cloud host sees your mail.** Railway and Render hold `data/` (archive, search index, Outlook session) on their volume, and `SESSION_ENCRYPTION_KEY` as one of their environment variables — so the host has both the ciphertext and the key. That's third-party data processing, the same decision as Browserless cloud (README §8), so check your employer's acceptable-use policy first. Your own always-on PC or your own server keeps mail in-house; these are the convenient option, not the private one.
+> ⚠️ **Before either recipe below: a cloud host sees your mail.** Railway and Render hold `data/` (archive, search index, Outlook session) on their volume, and `SESSION_ENCRYPTION_KEY` as one of their environment variables — so the host has both the ciphertext and the key. That's third-party data processing, the same decision as Browserless cloud ([design notes §8](docs/design.md)), so check your employer's acceptable-use policy first. Your own always-on PC or your own server keeps mail in-house; these are the convenient option, not the private one.
 >
 > Two practical notes: both build the `Dockerfile` **directly and ignore `compose.yaml`**, so its `shm_size: 1gb` does *not* apply — Chromium on Docker's default 64 MB `/dev/shm` is the first thing to suspect if the browser crashes there. And a datacenter IP means Microsoft logins expire sooner than from your PC, each one costing a `/login` tap.
 
@@ -1026,7 +1026,7 @@ uv run mailbrief login
 
 ## 13. Ask your inbox
 
-Ask questions about your email and get answers built only from your saved emails, with quotes, sources and ↗ links that open each email in Outlook. In Telegram (through `serve`) or in the terminal (`mailbrief chat`). Design: README §3.9.
+Ask questions about your email and get answers built only from your saved emails, with quotes, sources and ↗ links that open each email in Outlook. In Telegram (through `serve`) or in the terminal (`mailbrief chat`). Design: [design notes §3.9](docs/design.md).
 
 ### Setup, once
 ```
