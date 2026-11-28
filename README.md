@@ -10,7 +10,10 @@ MailBrief reads new mail from Outlook on the web, sorts it with an AI model you 
 
 [Website](https://kidcodert.github.io/mail-manager/) · [Setup guide](https://kidcodert.github.io/mail-manager/setup.html) · [Command reference](commands.md) · [Design notes](docs/design.md) · [How the code works](teaching/README.md) · [Changelog](CHANGELOG.md)
 
-![A MailBrief digest in Telegram, made from invented email](website/assets/showcase.png)
+<p align="center"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="website/assets/showcase-dark.png">
+  <img src="website/assets/showcase-light.png" width="460" alt="A MailBrief morning digest in Telegram: top priorities, replies needed, deadlines, opportunities and FYI, each line linking to its email in Outlook">
+</picture><br><sub>A real digest's layout; every name, course, place and date in it is invented.</sub></p>
 
 ## Why MailBrief
 
