@@ -458,7 +458,7 @@ html:not(.js) .home .session { grid-template-columns: minmax(0, 1fr); }
 .landing-grid { gap: 36px; align-items: start; }
 .home .boot { font: 12px/1.6 var(--mono); }
 .home .hero h1 { margin-top: 26px; font-size: clamp(2.4rem, 4vw, 4rem); font-weight: 500; letter-spacing: -.075em; }
-.wordmark { background: none; color: var(--text); }
+.wordmark { background: linear-gradient(95deg, var(--pink) 0%, var(--pink) 30%, var(--text) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .cursor { width: .14em; height: .75em; background: var(--pink); animation: none; }
 .home .tagline { font: 500 clamp(1.5rem, 2vw, 1.9rem)/1.25 var(--sans); letter-spacing: -.035em; }
 .home .lede { margin-top: 22px !important; font-size: 17px; }
@@ -467,19 +467,21 @@ html:not(.js) .home .session { grid-template-columns: minmax(0, 1fr); }
 .project-links { font-size: 13px; }
 .telegram-preview { border-radius: 4px; background: var(--bg); }
 .chat-header { padding: 16px 20px; background: var(--panel); }
-.chat-avatar { flex-basis: 32px; height: 32px; font: 500 18px var(--mono); border-radius: 3px; background: var(--raise); color: var(--pink); }
+.chat-avatar { flex-basis: 38px; height: 38px; font: 700 18px var(--sans); border-radius: 50%; background: var(--pink); color: var(--deep); }
 .chat-header h2 { font-size: 15px; }
 .chat-header p { font-size: 12px; }
 .demo-label { border: 0; font: 11px var(--mono); }
 .chat-body { padding: 20px; }
-.chat-date { font: 11px var(--mono); text-align: left; margin-bottom: 22px; }
-.chat-message { background: none; padding: 0; margin: 0; border-radius: 0; }
-.chat-message::before { display: none; }
+.chat-date { font: 12px var(--sans); text-align: center; margin-bottom: 16px; }
+/* a real chat bubble: the preview must read as a message you receive */
+.chat-message { background: var(--raise); padding: 20px 22px 10px; margin: 0 0 0 8px; border-radius: 14px 14px 14px 4px; }
+.chat-message::before { display: block; border-bottom-color: var(--raise); }
+.chat-message .digest-item:first-of-type { border-top: 0; padding-top: 0; }
 .chat-message h3 { font-size: 24px; font-weight: 500; }
 .home .digest-item { border-top: 1px solid var(--line); padding-top: 16px; margin-bottom: 16px; }
-.digest-item h4 { font: 12px var(--mono); color: var(--pink); margin-bottom: 8px; }
-.message-time { font: 11px var(--mono); }
-.preview-caption { font-size: 12px; }
+.digest-item h4 { font: 600 14px var(--sans); color: var(--pink); margin-bottom: 4px; }
+.message-time { font: 12px var(--sans); }
+.preview-caption { font-size: 13px; }
 .home .run-log { font-size: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
 .home .cmdline { border-top: 1px solid var(--line-2); background: var(--bg); padding: 12px 22px; }
 .cmdline button { border-radius: 3px; }
